@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Team Simulation</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-8 mx-auto">
+                <h1 class="text-center mb-4">AI Team Simulation</h1>
+                
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <div id="chat-container" class="mb-3" style="height: 400px; overflow-y: auto;">
+                            <!-- Chat messages will appear here -->
+                        </div>
+                        
+                        <div class="input-group">
+                            <input type="text" id="user-input" class="form-control" placeholder="Type your message...">
+                            <select id="agent-select" class="form-select" style="max-width: 150px;">
+                                <option value="pm">Project Manager</option>
+                                <option value="ba">Business Analyst</option>
+                                <option value="dev">Developer</option>
+                                <option value="tester">Tester</option>
+                                <option value="devops">DevOps</option>
+                                <option value="uxd">UX Designer</option>
+                            </select>
+                            <button class="btn btn-primary" id="send-btn">Send</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info" role="alert">
+                    <h5>Available Agents:</h5>
+                    <ul>
+                        <li><strong>Project Manager:</strong> Handles project planning, task delegation, and management</li>
+                        <li><strong>Business Analyst:</strong> Analyzes requirements and bridges technical-business communication</li>
+                        <li><strong>Developer:</strong> Provides technical solutions and implementation details</li>
+                        <li><strong>Tester:</strong> Designs test cases, quality assurance, and bug reporting</li>
+                        <li><strong>DevOps:</strong> Manages infrastructure, deployment, and CI/CD processes</li>
+                        <li><strong>UX Designer:</strong> Designs interfaces, conducts user research, and ensures great user experience</li>
+                    </ul>
+                </div>
+
+                <div class="text-center">
+                    <a href="/relationships" class="btn btn-secondary">View Agent Relationships</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

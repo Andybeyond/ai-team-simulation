@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Team Agent Relationships</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="text-center mb-4">AI Team Agent Relationships</h1>
+                <div class="card">
+                    <div class="card-body">
+                        <div id="agent-graph" class="graph-container"></div>
+                    </div>
+                </div>
+                <div class="mt-3 text-center">
+                    <a href="/" class="btn btn-secondary">Back to Chat</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/agent_graph.js') }}"></script>
+</body>
+</html>

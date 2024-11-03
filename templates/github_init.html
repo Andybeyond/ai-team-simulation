@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Repository Integration</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-6 mx-auto">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="card-title">Initialize GitHub Repository</h2>
+                        <div class="alert alert-info" role="alert">
+                            This will create a new repository or connect to an existing one with the specified name.
+                        </div>
+                        <form id="github-form">
+                            <div class="mb-3">
+                                <label for="repo-name" class="form-label">Repository Name</label>
+                                <input type="text" class="form-control" id="repo-name" name="repo_name" 
+                                    value="ai-team-simulation" required
+                                    pattern="[A-Za-z0-9._-]+"
+                                    title="Repository name can only contain letters, numbers, dots, hyphens, and underscores">
+                                <div class="form-text">Only letters, numbers, dots, hyphens, and underscores are allowed.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="description" class="form-label">Description</label>
+                                <textarea class="form-control" id="description" name="description" rows="3">AI Team Simulation using LangChain-powered agents</textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="submit-btn">
+                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true" id="loading-spinner"></span>
+                                <span id="submit-text">Initialize Repository</span>
+                            </button>
+                        </form>
+                        <div id="result" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        document.getElementById('github-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const resultDiv = document.getElementById('result');
+            const submitBtn = document.getElementById('submit-btn');
+            const loadingSpinner = document.getElementById('loading-spinner');
+            const submitText = document.getElementById('submit-text');
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            loadingSpinner.classList.remove('d-none');
+            submitText.textContent = 'Initializing...';
+            resultDiv.innerHTML = '<div class="alert alert-info">Initializing repository...</div>';
+            
+            try {
+                const response = await fetch('/github/init', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        repo_name: document.getElementById('repo-name').value,
+                        description: document.getElementById('description').value
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <h5 class="alert-heading">${data.message || 'Repository initialized successfully!'}</h5>
+                            <p>You can access your repository at:</p>
+                            <a href="${data.repo_url}" target="_blank" class="btn btn-outline-success btn-sm">
+                                ${data.repo_url}
+                            </a>
+                        </div>`;
+                } else {
+                    let errorMessage = data.error || 'An unknown error occurred';
+                    let additionalInfo = '';
+                    
+                    // Add specific guidance based on error code
+                    switch(data.error_code) {
+                        case 'AUTH_FAILED':
+                            additionalInfo = 'Please ensure your GitHub token is valid and properly configured.';
+                            break;
+                        case 'PERMISSION_DENIED':
+                            additionalInfo = 'Your GitHub token needs the "repo" scope to create repositories.';
+                            break;
+                        case 'INVALID_REPO':
+                            additionalInfo = 'Please choose a different repository name or use the existing repository.';
+                            break;
+                        case 'INVALID_NAME':
+                            additionalInfo = 'Repository name must contain only letters, numbers, dots, hyphens, and underscores.';
+                            break;
+                    }
+                    
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h5 class="alert-heading">Error</h5>
+                            <p>${errorMessage}</p>
+                            ${additionalInfo ? `<hr><p class="mb-0">${additionalInfo}</p>` : ''}
+                        </div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5 class="alert-heading">Connection Error</h5>
+                        <p>Failed to connect to the server. Please try again.</p>
+                        <hr>
+                        <p class="mb-0">Error details: ${error.message}</p>
+                    </div>`;
+            } finally {
+                // Reset button state
+                submitBtn.disabled = false;
+                loadingSpinner.classList.add('d-none');
+                submitText.textContent = 'Initialize Repository';
+            }
+        });
+    </script>
+</body>
+</html>
