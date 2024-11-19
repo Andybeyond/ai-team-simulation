@@ -32,6 +32,10 @@ class GitHubIntegration:
         try:
             rate_limit = self.github.get_rate_limit()
             core_remaining = rate_limit.core.remaining
+            core_limit = rate_limit.core.limit
+            
+            print(f"\nGitHub API Rate Limit Status:")
+            print(f"Remaining requests: {core_remaining}/{core_limit}")
             
             if core_remaining < 10:  # Buffer of 10 requests
                 reset_timestamp = rate_limit.core.reset.timestamp()
@@ -39,12 +43,14 @@ class GitHubIntegration:
                 sleep_time = reset_timestamp - current_timestamp + 1
                 
                 if sleep_time > 0:
-                    print(f"\nRate limit approaching, waiting {int(sleep_time)} seconds...")
+                    print(f"\nRate limit approaching. Waiting {int(sleep_time)} seconds for reset...")
                     time.sleep(sleep_time)
+                    print("Rate limit reset complete. Resuming operations...")
                     return True
             return False
         except Exception as e:
-            print(f"Warning: Rate limit check failed - {str(e)}")
+            print(f"\nWarning: Rate limit check failed - {str(e)}")
+            print("Waiting 5 seconds before retry...")
             time.sleep(5)  # Wait 5 seconds on error
             return False
 
@@ -52,14 +58,25 @@ class GitHubIntegration:
         """Retry an operation with exponential backoff."""
         for attempt in range(max_retries):
             try:
-                print(f"Attempting {operation_name}... (Attempt {attempt + 1}/{max_retries})")
+                print(f"\nAttempting {operation_name}... (Attempt {attempt + 1}/{max_retries})")
                 return operation()
             except GithubException as e:
                 if attempt == max_retries - 1:
+                    print(f"\nFailed {operation_name} after all retries. Error: {str(e)}")
                     raise e
                 wait_time = delay * (2 ** attempt)
-                print(f"{operation_name} failed, retrying in {wait_time} seconds... (Attempt {attempt + 1}/{max_retries})")
+                print(f"\n{operation_name} failed, retrying in {wait_time} seconds...")
                 print(f"Error details: {str(e)}")
+                if isinstance(e, RateLimitExceededException):
+                    print("\nRate limit exceeded. Waiting for reset...")
+                    self._check_rate_limit()
+                time.sleep(wait_time)
+            except Exception as e:
+                print(f"\nUnexpected error in {operation_name}: {str(e)}")
+                if attempt == max_retries - 1:
+                    raise e
+                wait_time = delay * (2 ** attempt)
+                print(f"Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
         return None
 
@@ -164,10 +181,12 @@ class GitHubIntegration:
     def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Mapping[str, Union[bool, str, list]]:
         """Commit multiple files to the repository with improved error handling and progress tracking."""
         try:
-            print("\nChecking rate limits...")
+            print("\nInitiating commit process...")
+            print(f"Total files to process: {len(files)}")
+            
             self._check_rate_limit()
             
-            print("Getting repository information...")
+            print("\nValidating repository access...")
             repo_info = self.get_repository(repo_name)
             if not repo_info['success']:
                 return repo_info
@@ -175,7 +194,7 @@ class GitHubIntegration:
             repo = self.user.get_repo(repo_name)
             processed_files = []
             
-            print("Getting latest commit information...")
+            print("\nFetching latest commit information...")
             try:
                 ref = repo.get_git_ref('heads/main')
                 commit = repo.get_git_commit(ref.object.sha)
@@ -193,7 +212,7 @@ class GitHubIntegration:
                         'error': 'Could not find main or master branch',
                         'error_code': 'BRANCH_NOT_FOUND'
                     }
-
+        
             element_list = []
             total_files = len(files)
             
@@ -205,12 +224,14 @@ class GitHubIntegration:
                     if not file_path.exists():
                         print(f"Warning: File not found - {file_path}")
                         continue
-                        
-                    # Skip files larger than GitHub's limit (50MB)
-                    if file_path.stat().st_size > 50 * 1024 * 1024:
+                    
+                    file_size = file_path.stat().st_size
+                    print(f"File size: {file_size / 1024:.2f}KB")
+                    
+                    if file_size > 50 * 1024 * 1024:
                         print(f"Warning: Skipping {file_path} - exceeds GitHub's 50MB limit")
                         continue
-                        
+                    
                     with open(file_path, 'rb') as f:
                         content = f.read()
                         
@@ -218,15 +239,9 @@ class GitHubIntegration:
                             print(f"Warning: Skipping empty file - {file_path}")
                             continue
                         
-                        if self._check_rate_limit():
-                            print("Resumed after rate limit wait")
-                        
-                        def create_blob_operation():
-                            return repo.create_git_blob(base64.b64encode(content).decode(), 'base64')
-                        
                         print(f"Creating blob for {file_path}...")
                         blob = self._retry_operation(
-                            create_blob_operation,
+                            lambda: repo.create_git_blob(base64.b64encode(content).decode(), 'base64'),
                             operation_name=f"Blob creation for {file_path}"
                         )
                         
@@ -254,15 +269,9 @@ class GitHubIntegration:
                     'error_code': 'NO_FILES'
                 }
 
-            print("\nCreating tree...")
-            if self._check_rate_limit():
-                print("Resumed after rate limit wait")
-            
-            def create_tree_operation():
-                return repo.create_git_tree(element_list, base_tree)
-            
+            print("\nCreating Git tree...")
             tree = self._retry_operation(
-                create_tree_operation,
+                lambda: repo.create_git_tree(element_list, base_tree),
                 operation_name="Tree creation"
             )
             
@@ -273,15 +282,9 @@ class GitHubIntegration:
                     'error_code': 'TREE_CREATE_FAILED'
                 }
             
-            print("Creating commit...")
-            if self._check_rate_limit():
-                print("Resumed after rate limit wait")
-            
-            def create_commit_operation():
-                return repo.create_git_commit(commit_message, tree, [commit])
-            
+            print("\nCreating commit...")
             new_commit = self._retry_operation(
-                create_commit_operation,
+                lambda: repo.create_git_commit(commit_message, tree, [commit]),
                 operation_name="Commit creation"
             )
             
@@ -292,16 +295,9 @@ class GitHubIntegration:
                     'error_code': 'COMMIT_CREATE_FAILED'
                 }
             
-            print("Updating reference...")
-            if self._check_rate_limit():
-                print("Resumed after rate limit wait")
-            
-            def update_ref_operation():
-                ref.edit(new_commit.sha)
-                return True
-            
+            print("\nUpdating repository reference...")
             if not self._retry_operation(
-                update_ref_operation,
+                lambda: ref.edit(new_commit.sha),
                 operation_name="Reference update"
             ):
                 return {
@@ -309,14 +305,14 @@ class GitHubIntegration:
                     'error': 'Failed to update reference after multiple attempts',
                     'error_code': 'REF_UPDATE_FAILED'
                 }
-
+            
             return {
                 'success': True,
-                'message': f'Successfully committed {len(element_list)} files',
+                'message': f'Successfully committed {len(processed_files)} files',
                 'commit_sha': str(new_commit.sha),
                 'processed_files': processed_files
             }
-
+        
         except Exception as e:
             return self._handle_github_error(e)
 
