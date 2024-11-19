@@ -13,7 +13,7 @@ class GitHubIntegration:
             raise ValueError("GITHUB_TOKEN environment variable is not set")
         
         try:
-            self.github = Github(self.token, timeout=30, retry=3)  # Add timeout and retry
+            self.github = Github(self.token, timeout=60, retry=5)  # Increased timeout and retries
             self.user = self.github.get_user()
             # Validate token by attempting to get user information
             self.user.login
@@ -28,158 +28,132 @@ class GitHubIntegration:
             raise ValueError(f"Failed to initialize GitHub integration: {str(e)}")
 
     def _check_rate_limit(self) -> bool:
-        """Check and handle GitHub API rate limits."""
-        try:
-            rate_limit = self.github.get_rate_limit()
-            core_remaining = rate_limit.core.remaining
-            core_limit = rate_limit.core.limit
-            
-            print(f"\nGitHub API Rate Limit Status:")
-            print(f"Remaining requests: {core_remaining}/{core_limit}")
-            
-            if core_remaining < 10:  # Buffer of 10 requests
-                reset_timestamp = rate_limit.core.reset.timestamp()
-                current_timestamp = time.time()
-                sleep_time = reset_timestamp - current_timestamp + 1
+        """Check and handle GitHub API rate limits with improved error handling."""
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                rate_limit = self.github.get_rate_limit()
+                core_remaining = rate_limit.core.remaining
+                core_limit = rate_limit.core.limit
                 
-                if sleep_time > 0:
-                    print(f"\nRate limit approaching. Waiting {int(sleep_time)} seconds for reset...")
-                    time.sleep(sleep_time)
-                    print("Rate limit reset complete. Resuming operations...")
-                    return True
-            return False
-        except Exception as e:
-            print(f"\nWarning: Rate limit check failed - {str(e)}")
-            print("Waiting 5 seconds before retry...")
-            time.sleep(5)  # Wait 5 seconds on error
-            return False
+                print(f"\nGitHub API Rate Limit Status:")
+                print(f"Remaining requests: {core_remaining}/{core_limit}")
+                
+                if core_remaining < 20:  # Increased buffer from 10 to 20
+                    reset_timestamp = rate_limit.core.reset.timestamp()
+                    current_timestamp = time.time()
+                    sleep_time = reset_timestamp - current_timestamp + 2  # Added 2 second buffer
+                    
+                    if sleep_time > 0:
+                        print(f"\nRate limit approaching. Waiting {int(sleep_time)} seconds for reset...")
+                        time.sleep(sleep_time)
+                        print("Rate limit reset complete. Resuming operations...")
+                        return True
+                return False
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    print(f"\nWarning: Rate limit check failed after {max_retries} attempts - {str(e)}")
+                    return False
+                    
+                wait_time = retry_delay * (2 ** attempt)
+                print(f"\nRate limit check failed, retrying in {wait_time} seconds...")
+                print(f"Error details: {str(e)}")
+                time.sleep(wait_time)
+        return False
 
-    def _retry_operation(self, operation, max_retries=3, delay=2, operation_name="Operation"):
-        """Retry an operation with exponential backoff."""
+    def _retry_operation(self, operation, max_retries=5, delay=5, operation_name="Operation"):
+        """Retry an operation with exponential backoff and improved error handling."""
+        last_error = None
+        
         for attempt in range(max_retries):
             try:
                 print(f"\nAttempting {operation_name}... (Attempt {attempt + 1}/{max_retries})")
-                return operation()
+                result = operation()
+                print(f"{operation_name} completed successfully!")
+                return result
+                
+            except RateLimitExceededException as e:
+                print(f"\nRate limit exceeded during {operation_name}")
+                if self._check_rate_limit():
+                    continue
+                last_error = e
+                break
+                
             except GithubException as e:
                 if attempt == max_retries - 1:
                     print(f"\nFailed {operation_name} after all retries. Error: {str(e)}")
-                    raise e
+                    last_error = e
+                    break
+                    
                 wait_time = delay * (2 ** attempt)
                 print(f"\n{operation_name} failed, retrying in {wait_time} seconds...")
                 print(f"Error details: {str(e)}")
-                if isinstance(e, RateLimitExceededException):
-                    print("\nRate limit exceeded. Waiting for reset...")
-                    self._check_rate_limit()
                 time.sleep(wait_time)
+                
             except Exception as e:
                 print(f"\nUnexpected error in {operation_name}: {str(e)}")
                 if attempt == max_retries - 1:
-                    raise e
+                    last_error = e
+                    break
+                    
                 wait_time = delay * (2 ** attempt)
                 print(f"Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
+        
+        if last_error:
+            raise last_error
         return None
 
     def _handle_github_error(self, e: Exception) -> Mapping[str, Union[bool, str]]:
-        """Handle GitHub-related errors with user-friendly messages."""
-        if isinstance(e, RateLimitExceededException):
-            reset_time = self.github.rate_limiting_resettime
-            wait_time = reset_time - int(time.time())
-            return {
-                'success': False,
-                'error': f'Rate limit exceeded. Reset in {wait_time} seconds.',
-                'error_code': 'RATE_LIMIT'
-            }
-        elif isinstance(e, GithubException):
-            if e.status == 401:
-                return {
-                    'success': False,
-                    'error': 'Authentication failed. Please check your GitHub token.',
-                    'error_code': 'AUTH_FAILED'
-                }
-            elif e.status == 403:
-                return {
-                    'success': False,
-                    'error': 'Permission denied. Your token might not have the required permissions.',
-                    'error_code': 'PERMISSION_DENIED'
-                }
-            elif e.status == 422:
-                return {
-                    'success': False,
-                    'error': 'Repository already exists or invalid repository name.',
-                    'error_code': 'INVALID_REPO'
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': f'GitHub API error ({e.status}): {str(e)}',
-                    'error_code': 'API_ERROR'
-                }
-        return {
+        """Handle GitHub-related errors with improved error reporting."""
+        error_info = {
             'success': False,
-            'error': f'Unexpected error: {str(e)}',
-            'error_code': 'UNEXPECTED_ERROR'
+            'error': str(e),
+            'error_code': 'UNKNOWN_ERROR'
         }
-
-    def _serialize_repo_info(self, repo) -> Mapping[str, Union[str, bool, None]]:
-        """Serialize repository information into a JSON-friendly format."""
-        return {
-            'name': str(repo.name),
-            'full_name': str(repo.full_name),
-            'description': str(repo.description) if repo.description else '',
-            'html_url': str(repo.html_url),
-            'clone_url': str(repo.clone_url),
-            'ssh_url': str(repo.ssh_url),
-            'default_branch': str(repo.default_branch),
-            'private': bool(repo.private),
-            'created_at': repo.created_at.isoformat() if repo.created_at else None,
-            'updated_at': repo.updated_at.isoformat() if repo.updated_at else None
-        }
-
-    def create_repository(self, name: str, description: Optional[str] = None, private: bool = False) -> Mapping[str, Union[bool, str, Mapping]]:
-        """Create a new GitHub repository with enhanced error handling."""
-        try:
-            self._check_rate_limit()
-            
-            if not name or not name.strip():
-                return {
-                    'success': False,
-                    'error': 'Repository name cannot be empty',
-                    'error_code': 'INVALID_NAME'
-                }
-
-            def create_repo_operation():
-                return self.user.create_repo(
-                    name=name,
-                    description=description or "AI Team Simulation using LangChain-powered agents",
-                    private=private,
-                    has_issues=True,
-                    has_wiki=True,
-                    has_downloads=True,
-                    auto_init=True
-                )
-
-            repo = self._retry_operation(create_repo_operation)
-            if not repo:
-                return {
-                    'success': False,
-                    'error': 'Failed to create repository after multiple attempts',
-                    'error_code': 'CREATE_FAILED'
-                }
-            
-            repo_info = self._serialize_repo_info(repo)
-            return {
-                'success': True,
-                'repo_info': repo_info,
-                'repo_url': str(repo.html_url),
-                'clone_url': str(repo.clone_url),
-                'message': 'Repository created successfully'
+        
+        if isinstance(e, RateLimitExceededException):
+            try:
+                reset_time = self.github.rate_limiting_resettime
+                wait_time = max(0, reset_time - int(time.time()))
+                error_info.update({
+                    'error': f'Rate limit exceeded. Reset in {wait_time} seconds.',
+                    'error_code': 'RATE_LIMIT',
+                    'reset_time': reset_time
+                })
+            except:
+                error_info.update({
+                    'error': 'Rate limit exceeded. Please try again later.',
+                    'error_code': 'RATE_LIMIT'
+                })
+                
+        elif isinstance(e, GithubException):
+            error_codes = {
+                401: ('AUTH_FAILED', 'Authentication failed. Please check your GitHub token.'),
+                403: ('PERMISSION_DENIED', 'Permission denied. Your token might not have the required permissions.'),
+                404: ('NOT_FOUND', 'Resource not found. Please check the repository name and permissions.'),
+                422: ('INVALID_REQUEST', 'Invalid request. Repository might already exist or name is invalid.'),
+                500: ('GITHUB_ERROR', 'GitHub server error. Please try again later.'),
+                503: ('SERVICE_UNAVAILABLE', 'GitHub service unavailable. Please try again later.')
             }
-        except Exception as e:
-            return self._handle_github_error(e)
+            
+            error_code, error_message = error_codes.get(
+                e.status, 
+                ('API_ERROR', f'GitHub API error ({e.status}): {str(e)}')
+            )
+            
+            error_info.update({
+                'error': error_message,
+                'error_code': error_code,
+                'status_code': e.status
+            })
+            
+        return error_info
 
     def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Mapping[str, Union[bool, str, list]]:
-        """Commit multiple files to the repository with improved error handling and progress tracking."""
+        """Commit multiple files to the repository with improved error handling and timeout settings."""
         try:
             print("\nInitiating commit process...")
             print(f"Total files to process: {len(files)}")
@@ -212,7 +186,7 @@ class GitHubIntegration:
                         'error': 'Could not find main or master branch',
                         'error_code': 'BRANCH_NOT_FOUND'
                     }
-        
+            
             element_list = []
             total_files = len(files)
             
@@ -242,7 +216,9 @@ class GitHubIntegration:
                         print(f"Creating blob for {file_path}...")
                         blob = self._retry_operation(
                             lambda: repo.create_git_blob(base64.b64encode(content).decode(), 'base64'),
-                            operation_name=f"Blob creation for {file_path}"
+                            operation_name=f"Blob creation for {file_path}",
+                            max_retries=5,
+                            delay=10
                         )
                         
                         if blob:
@@ -261,18 +237,20 @@ class GitHubIntegration:
                 except Exception as e:
                     print(f"Error processing file {file_info['path']}: {str(e)}")
                     continue
-
+            
             if not element_list:
                 return {
                     'success': False,
                     'error': 'No valid files to commit',
                     'error_code': 'NO_FILES'
                 }
-
+            
             print("\nCreating Git tree...")
             tree = self._retry_operation(
                 lambda: repo.create_git_tree(element_list, base_tree),
-                operation_name="Tree creation"
+                operation_name="Tree creation",
+                max_retries=5,
+                delay=10
             )
             
             if not tree:
@@ -285,7 +263,9 @@ class GitHubIntegration:
             print("\nCreating commit...")
             new_commit = self._retry_operation(
                 lambda: repo.create_git_commit(commit_message, tree, [commit]),
-                operation_name="Commit creation"
+                operation_name="Commit creation",
+                max_retries=5,
+                delay=10
             )
             
             if not new_commit:
@@ -298,7 +278,9 @@ class GitHubIntegration:
             print("\nUpdating repository reference...")
             if not self._retry_operation(
                 lambda: ref.edit(new_commit.sha),
-                operation_name="Reference update"
+                operation_name="Reference update",
+                max_retries=5,
+                delay=10
             ):
                 return {
                     'success': False,
@@ -317,7 +299,7 @@ class GitHubIntegration:
             return self._handle_github_error(e)
 
     def get_repository(self, name: str) -> Mapping[str, Union[bool, str, Mapping]]:
-        """Get repository information with enhanced error handling."""
+        """Get repository information with improved error handling."""
         try:
             self._check_rate_limit()
             
@@ -327,11 +309,14 @@ class GitHubIntegration:
                     'error': 'Repository name cannot be empty',
                     'error_code': 'INVALID_NAME'
                 }
-
-            def get_repo_operation():
-                return self.user.get_repo(name)
             
-            repo = self._retry_operation(get_repo_operation)
+            repo = self._retry_operation(
+                lambda: self.user.get_repo(name),
+                operation_name="Repository fetch",
+                max_retries=5,
+                delay=5
+            )
+            
             if not repo:
                 return {
                     'success': False,
@@ -339,7 +324,18 @@ class GitHubIntegration:
                     'error_code': 'GET_REPO_FAILED'
                 }
             
-            repo_info = self._serialize_repo_info(repo)
+            repo_info = {
+                'name': str(repo.name),
+                'full_name': str(repo.full_name),
+                'description': str(repo.description) if repo.description else '',
+                'html_url': str(repo.html_url),
+                'clone_url': str(repo.clone_url),
+                'ssh_url': str(repo.ssh_url),
+                'default_branch': str(repo.default_branch),
+                'private': bool(repo.private),
+                'created_at': repo.created_at.isoformat() if repo.created_at else None,
+                'updated_at': repo.updated_at.isoformat() if repo.updated_at else None
+            }
             
             return {
                 'success': True,
@@ -348,18 +344,19 @@ class GitHubIntegration:
                 'clone_url': str(repo.clone_url),
                 'message': 'Repository found successfully'
             }
+            
         except Exception as e:
             return self._handle_github_error(e)
 
     def initialize_repository(self, name: str, description: Optional[str] = None) -> Mapping[str, Union[bool, str, Mapping]]:
-        """Initialize or get existing repository with enhanced error handling."""
+        """Initialize or get existing repository with improved error handling."""
         if not name or not name.strip():
             return {
                 'success': False,
                 'error': 'Repository name cannot be empty',
                 'error_code': 'INVALID_NAME'
             }
-
+        
         existing_repo = self.get_repository(name)
         if existing_repo['success']:
             return {
@@ -369,4 +366,50 @@ class GitHubIntegration:
                 'clone_url': existing_repo['clone_url'],
                 'message': 'Using existing repository'
             }
-        return self.create_repository(name, description)
+            
+        try:
+            repo = self._retry_operation(
+                lambda: self.user.create_repo(
+                    name=name,
+                    description=description or "AI Team Simulation using LangChain-powered agents",
+                    private=False,
+                    has_issues=True,
+                    has_wiki=True,
+                    has_downloads=True,
+                    auto_init=True
+                ),
+                operation_name="Repository creation",
+                max_retries=5,
+                delay=5
+            )
+            
+            if not repo:
+                return {
+                    'success': False,
+                    'error': 'Failed to create repository after multiple attempts',
+                    'error_code': 'CREATE_FAILED'
+                }
+            
+            repo_info = {
+                'name': str(repo.name),
+                'full_name': str(repo.full_name),
+                'description': str(repo.description) if repo.description else '',
+                'html_url': str(repo.html_url),
+                'clone_url': str(repo.clone_url),
+                'ssh_url': str(repo.ssh_url),
+                'default_branch': str(repo.default_branch),
+                'private': bool(repo.private),
+                'created_at': repo.created_at.isoformat() if repo.created_at else None,
+                'updated_at': repo.updated_at.isoformat() if repo.updated_at else None
+            }
+            
+            return {
+                'success': True,
+                'repo_info': repo_info,
+                'repo_url': str(repo.html_url),
+                'clone_url': str(repo.clone_url),
+                'message': 'Repository created successfully'
+            }
+            
+        except Exception as e:
+            return self._handle_github_error(e)
