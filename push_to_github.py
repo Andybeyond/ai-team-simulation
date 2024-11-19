@@ -99,6 +99,37 @@ def print_progress(current, total, message=""):
     sys.stdout.write(f'\r[{bar}] {int(progress * 100)}% {message}')
     sys.stdout.flush()
 
+def push_batch(github, repo_name, files, batch_num, total_batches):
+    """Push a batch of files with retries."""
+    max_retries = 3
+    retry_delay = 5
+    
+    for attempt in range(max_retries):
+        try:
+            commit_result = github.commit_files(
+                repo_name=repo_name,
+                files=files,
+                commit_message=f"Update project files (batch {batch_num}/{total_batches})"
+            )
+            
+            if commit_result['success']:
+                return commit_result
+            
+            print(f"\nError in batch {batch_num}: {commit_result.get('error', 'Unknown error')}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            
+        except Exception as e:
+            print(f"\nError pushing batch {batch_num}: {str(e)}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                time.sleep(retry_delay)
+                retry_delay *= 2
+    
+    return None
+
 def main():
     """Main function to push files to GitHub repository."""
     try:
@@ -125,10 +156,11 @@ def main():
         
         print(f"Repository initialized: {init_result['repo_url']}")
         
-        # Commit files in smaller batches to avoid timeout
-        batch_size = 10
+        # Commit files in smaller batches with improved error handling
+        batch_size = 5  # Reduced batch size for better reliability
         total_batches = (total_files + batch_size - 1) // batch_size
         processed_files = []
+        failed_batches = []
         
         for batch_num in range(total_batches):
             start_idx = batch_num * batch_size
@@ -137,28 +169,31 @@ def main():
             
             print(f"\nPushing batch {batch_num + 1}/{total_batches} ({len(batch_files)} files)...")
             
-            commit_result = github.commit_files(
-                repo_name=repo_name,
-                files=batch_files,
-                commit_message=f"Update project files (batch {batch_num + 1}/{total_batches})"
-            )
+            result = push_batch(github, repo_name, batch_files, batch_num + 1, total_batches)
             
-            if commit_result['success']:
-                processed_files.extend(commit_result.get('processed_files', []))
+            if result and result['success']:
+                processed_files.extend(result.get('processed_files', []))
                 print_progress(len(processed_files), total_files, 
                              f" - {len(processed_files)}/{total_files} files pushed")
             else:
-                print(f"\nError in batch {batch_num + 1}: {commit_result.get('error', 'Unknown error')}")
-                continue
+                print(f"\nBatch {batch_num + 1} failed after all retries")
+                failed_batches.append((batch_num + 1, batch_files))
             
             # Small delay between batches to avoid rate limiting
             if batch_num < total_batches - 1:
-                time.sleep(2)
+                time.sleep(3)
         
+        # Report results
         if processed_files:
-            print("\n\nRepository push completed successfully!")
+            print("\n\nRepository push summary:")
             print(f"Total files pushed: {len(processed_files)}/{total_files}")
             print(f"Repository URL: {init_result['repo_url']}")
+            
+            if failed_batches:
+                print("\nFailed batches:")
+                for batch_num, _ in failed_batches:
+                    print(f"- Batch {batch_num}")
+                return False
             return True
         else:
             print("\nNo files were successfully pushed")
