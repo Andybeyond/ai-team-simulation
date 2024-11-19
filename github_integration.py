@@ -48,16 +48,18 @@ class GitHubIntegration:
             time.sleep(5)  # Wait 5 seconds on error
             return False
 
-    def _retry_operation(self, operation, max_retries=3, delay=2):
+    def _retry_operation(self, operation, max_retries=3, delay=2, operation_name="Operation"):
         """Retry an operation with exponential backoff."""
         for attempt in range(max_retries):
             try:
+                print(f"Attempting {operation_name}... (Attempt {attempt + 1}/{max_retries})")
                 return operation()
             except GithubException as e:
                 if attempt == max_retries - 1:
                     raise e
                 wait_time = delay * (2 ** attempt)
-                print(f"Operation failed, retrying in {wait_time} seconds... (Attempt {attempt + 1}/{max_retries})")
+                print(f"{operation_name} failed, retrying in {wait_time} seconds... (Attempt {attempt + 1}/{max_retries})")
+                print(f"Error details: {str(e)}")
                 time.sleep(wait_time)
         return None
 
@@ -162,9 +164,10 @@ class GitHubIntegration:
     def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Mapping[str, Union[bool, str, list]]:
         """Commit multiple files to the repository with improved error handling and progress tracking."""
         try:
+            print("\nChecking rate limits...")
             self._check_rate_limit()
             
-            # Get repository
+            print("Getting repository information...")
             repo_info = self.get_repository(repo_name)
             if not repo_info['success']:
                 return repo_info
@@ -172,16 +175,18 @@ class GitHubIntegration:
             repo = self.user.get_repo(repo_name)
             processed_files = []
             
+            print("Getting latest commit information...")
             try:
-                # Get the latest commit
                 ref = repo.get_git_ref('heads/main')
                 commit = repo.get_git_commit(ref.object.sha)
                 base_tree = commit.tree
+                print("Using 'main' branch")
             except GithubException:
                 try:
                     ref = repo.get_git_ref('heads/master')
                     commit = repo.get_git_commit(ref.object.sha)
                     base_tree = commit.tree
+                    print("Using 'master' branch")
                 except GithubException:
                     return {
                         'success': False,
@@ -189,7 +194,6 @@ class GitHubIntegration:
                         'error_code': 'BRANCH_NOT_FOUND'
                     }
 
-            # Create tree elements with detailed error handling
             element_list = []
             total_files = len(files)
             
@@ -202,9 +206,9 @@ class GitHubIntegration:
                         print(f"Warning: File not found - {file_path}")
                         continue
                         
-                    # Skip files larger than GitHub's limit (100MB)
-                    if file_path.stat().st_size > 100 * 1024 * 1024:
-                        print(f"Warning: Skipping {file_path} - exceeds GitHub's 100MB limit")
+                    # Skip files larger than GitHub's limit (50MB)
+                    if file_path.stat().st_size > 50 * 1024 * 1024:
+                        print(f"Warning: Skipping {file_path} - exceeds GitHub's 50MB limit")
                         continue
                         
                     with open(file_path, 'rb') as f:
@@ -221,7 +225,10 @@ class GitHubIntegration:
                             return repo.create_git_blob(base64.b64encode(content).decode(), 'base64')
                         
                         print(f"Creating blob for {file_path}...")
-                        blob = self._retry_operation(create_blob_operation)
+                        blob = self._retry_operation(
+                            create_blob_operation,
+                            operation_name=f"Blob creation for {file_path}"
+                        )
                         
                         if blob:
                             element = InputGitTreeElement(
@@ -254,7 +261,11 @@ class GitHubIntegration:
             def create_tree_operation():
                 return repo.create_git_tree(element_list, base_tree)
             
-            tree = self._retry_operation(create_tree_operation)
+            tree = self._retry_operation(
+                create_tree_operation,
+                operation_name="Tree creation"
+            )
+            
             if not tree:
                 return {
                     'success': False,
@@ -269,7 +280,11 @@ class GitHubIntegration:
             def create_commit_operation():
                 return repo.create_git_commit(commit_message, tree, [commit])
             
-            new_commit = self._retry_operation(create_commit_operation)
+            new_commit = self._retry_operation(
+                create_commit_operation,
+                operation_name="Commit creation"
+            )
+            
             if not new_commit:
                 return {
                     'success': False,
@@ -285,7 +300,10 @@ class GitHubIntegration:
                 ref.edit(new_commit.sha)
                 return True
             
-            if not self._retry_operation(update_ref_operation):
+            if not self._retry_operation(
+                update_ref_operation,
+                operation_name="Reference update"
+            ):
                 return {
                     'success': False,
                     'error': 'Failed to update reference after multiple attempts',
