@@ -62,24 +62,18 @@ class GitHubIntegration:
 
     def _serialize_repo_info(self, repo) -> Dict[str, str]:
         """Serialize repository information into a JSON-friendly format."""
-        try:
-            return {
-                'name': str(repo.name),
-                'full_name': str(repo.full_name),
-                'description': str(repo.description) if repo.description else '',
-                'html_url': str(repo.html_url),
-                'clone_url': str(repo.clone_url),
-                'ssh_url': str(repo.ssh_url),
-                'default_branch': str(repo.default_branch),
-                'private': bool(repo.private),
-                'created_at': repo.created_at.isoformat() if repo.created_at else None,
-                'updated_at': repo.updated_at.isoformat() if repo.updated_at else None
-            }
-        except Exception as e:
-            return {
-                'name': '',
-                'error': f'Failed to serialize repository info: {str(e)}'
-            }
+        return {
+            'name': str(repo.name),
+            'full_name': str(repo.full_name),
+            'description': str(repo.description) if repo.description else '',
+            'html_url': str(repo.html_url),
+            'clone_url': str(repo.clone_url),
+            'ssh_url': str(repo.ssh_url),
+            'default_branch': str(repo.default_branch),
+            'private': bool(repo.private),
+            'created_at': repo.created_at.isoformat() if repo.created_at else None,
+            'updated_at': repo.updated_at.isoformat() if repo.updated_at else None
+        }
 
     def create_repository(self, name: str, description: Optional[str] = None, private: bool = False) -> Dict[str, Union[bool, str, dict]]:
         """Create a new GitHub repository with enhanced error handling."""
@@ -157,7 +151,7 @@ class GitHubIntegration:
         return self.create_repository(name, description)
 
     def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Dict[str, Union[bool, str, dict]]:
-        """Commit multiple files to the repository."""
+        """Commit multiple files to the repository with improved error handling and progress tracking."""
         try:
             # Get repository
             repo_info = self.get_repository(repo_name)
@@ -165,42 +159,81 @@ class GitHubIntegration:
                 return repo_info
             
             repo = self.user.get_repo(repo_name)
-            
-            # Get the latest commit
-            ref = repo.get_git_ref('heads/main')
-            commit = repo.get_git_commit(ref.object.sha)
-            base_tree = commit.tree
-
-            # Create tree elements
-            element_list = []
             processed_files = []
+            
+            try:
+                # Get the latest commit
+                ref = repo.get_git_ref('heads/main')
+                commit = repo.get_git_commit(ref.object.sha)
+                base_tree = commit.tree
+            except GithubException as e:
+                # If ref doesn't exist, try master branch
+                try:
+                    ref = repo.get_git_ref('heads/master')
+                    commit = repo.get_git_commit(ref.object.sha)
+                    base_tree = commit.tree
+                except GithubException:
+                    return {
+                        'success': False,
+                        'error': 'Could not find main or master branch',
+                        'error_code': 'BRANCH_NOT_FOUND'
+                    }
+
+            # Create tree elements with detailed error handling
+            element_list = []
             for file_info in files:
                 try:
-                    with open(file_info['path'], 'rb') as f:
+                    file_path = Path(file_info['path'])
+                    if not file_path.exists():
+                        print(f"Warning: File not found - {file_path}")
+                        continue
+                        
+                    # Skip files larger than GitHub's limit (100MB)
+                    if file_path.stat().st_size > 100 * 1024 * 1024:
+                        print(f"Warning: Skipping {file_path} - exceeds GitHub's 100MB limit")
+                        continue
+                        
+                    with open(file_path, 'rb') as f:
                         content = f.read()
-                        # Create blob
-                        blob = repo.create_git_blob(base64.b64encode(content).decode(), 'base64')
-                        element = InputGitTreeElement(
-                            path=file_info['path'],
-                            mode='100644',
-                            type='blob',
-                            sha=blob.sha
-                        )
-                        element_list.append(element)
-                        processed_files.append(str(file_info['path']))
+                        if not content.strip():
+                            print(f"Warning: Skipping empty file - {file_path}")
+                            continue
+                            
+                        # Create blob with error handling
+                        try:
+                            blob = repo.create_git_blob(base64.b64encode(content).decode(), 'base64')
+                            element = InputGitTreeElement(
+                                path=str(file_path),
+                                mode='100644',
+                                type='blob',
+                                sha=blob.sha
+                            )
+                            element_list.append(element)
+                            processed_files.append(str(file_path))
+                            print(f"Successfully processed: {file_path}")
+                        except GithubException as e:
+                            print(f"Error creating blob for {file_path}: {str(e)}")
+                            continue
+                            
                 except Exception as e:
                     print(f"Error processing file {file_info['path']}: {str(e)}")
                     continue
 
-            # Create tree
-            tree = repo.create_git_tree(element_list, base_tree)
-            
-            # Create commit
-            parent = [commit]
-            commit = repo.create_git_commit(commit_message, tree, parent)
-            
-            # Update reference
-            ref.edit(commit.sha)
+            if not element_list:
+                return {
+                    'success': False,
+                    'error': 'No valid files to commit',
+                    'error_code': 'NO_FILES'
+                }
+
+            # Create tree and commit with error handling
+            try:
+                tree = repo.create_git_tree(element_list, base_tree)
+                parent = [commit]
+                commit = repo.create_git_commit(commit_message, tree, parent)
+                ref.edit(commit.sha)
+            except GithubException as e:
+                return self._handle_github_error(e)
 
             return {
                 'success': True,
