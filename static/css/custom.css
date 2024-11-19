@@ -1,121 +1,391 @@
+/* Chat container styles */
+.chat-container {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    background-color: var(--bs-tertiary-bg);
+    height: 500px;
+    overflow-y: auto;
+    margin-bottom: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bs-primary) var(--bs-dark);
+}
+
+/* Message styles */
 .message {
-    margin-bottom: 1rem;
-    padding: 0.75rem 1.25rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.25rem;
     border-radius: 0.5rem;
     color: var(--bs-body-color);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .user-message {
     background-color: var(--bs-primary-bg-subtle);
     border-left: 4px solid var(--bs-primary);
     margin-left: 2rem;
+    margin-right: 1rem;
     color: var(--bs-primary-text-emphasis);
 }
 
 .agent-message {
-    background-color: var(--bs-dark-bg-subtle);
+    background-color: var(--bs-dark);
     border-left: 4px solid var(--bs-info);
     margin-right: 2rem;
-    color: var(--bs-emphasis-color);
+    margin-left: 1rem;
+    color: var(--bs-light);
 }
 
-#chat-container {
-    border: 1px solid var(--bs-border-color);
+/* Context styles with improved display */
+.context-info {
+    font-size: 0.95rem;
+    padding: 1.25rem;
+    margin: 1rem 0;
+    background-color: var(--bs-dark-bg-subtle);
     border-radius: 0.5rem;
-    padding: 1rem;
-    background-color: var(--bs-tertiary-bg);
-    height: 400px;
+    border-left: 3px solid var(--bs-secondary);
+    color: var(--bs-light);
+    display: none;
+    white-space: pre-wrap;
+    max-height: 400px;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bs-secondary) var(--bs-dark);
+}
+
+.context-info.show {
+    display: block;
+    animation: fadeIn 0.2s ease-in;
+}
+
+.context-section {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 0.375rem;
+}
+
+.context-section:last-child {
+    margin-bottom: 0;
+}
+
+.context-header {
+    color: var(--bs-info);
+    font-size: 0.9rem;
+    font-weight: bold;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.context-separator {
+    border: 0;
+    height: 1px;
+    background: var(--bs-border-color);
+    margin: 1.5rem 0;
+}
+
+.context-toggle {
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--bs-gray-400);
+    background: none;
+    border: none;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.25rem;
+    transition: all 0.2s ease;
+}
+
+.context-toggle:hover {
+    color: var(--bs-info);
+    background-color: var(--bs-dark-bg-subtle);
+}
+
+/* Agent response styles */
+.agent-response {
+    position: relative;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    background-color: var(--bs-dark);
+    color: var(--bs-light);
+    transition: all 0.2s ease;
+}
+
+.agent-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 1.1rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.response-text {
+    white-space: pre-wrap;
+    line-height: 1.6;
+    font-size: 1rem;
+    padding: 0.5rem 0;
+}
+
+.response-text p {
+    margin-bottom: 0.75rem;
+}
+
+.response-text p:last-child {
+    margin-bottom: 0;
+}
+
+/* Tab styles */
+.nav-tabs {
+    border-bottom: 2px solid var(--bs-border-color);
+    margin-bottom: 1rem;
+}
+
+.nav-tabs .nav-link {
+    color: var(--bs-body-color);
+    border: none;
+    padding: 0.75rem 1.25rem;
+    margin-right: 0.25rem;
+    border-radius: 0.5rem 0.5rem 0 0;
+    transition: all 0.2s ease;
+}
+
+.nav-tabs .nav-link:hover {
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-primary);
+}
+
+.nav-tabs .nav-link.active {
+    color: var(--bs-info);
+    background-color: var(--bs-dark);
+    border-bottom: 2px solid var(--bs-info);
+}
+
+/* Tab content transitions */
+.tab-content > .tab-pane {
+    display: none;
+}
+
+.tab-content > .active {
+    display: block;
+    animation: fadeIn 0.2s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Scrollbar styling */
+.chat-container::-webkit-scrollbar,
+.context-info::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-container::-webkit-scrollbar-track,
+.context-info::-webkit-scrollbar-track {
+    background: var(--bs-dark);
+}
+
+.chat-container::-webkit-scrollbar-thumb,
+.context-info::-webkit-scrollbar-thumb {
+    background-color: var(--bs-primary);
+    border-radius: 4px;
+    border: 2px solid var(--bs-dark);
+}
+
+.context-info::-webkit-scrollbar-thumb {
+    background-color: var(--bs-secondary);
+}
+
+/* Message styles */
+.message {
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.25rem;
+    border-radius: 0.5rem;
+    color: var(--bs-body-color);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.user-message {
+    background-color: var(--bs-primary-bg-subtle);
+    border-left: 4px solid var(--bs-primary);
+    margin-left: 2rem;
+    margin-right: 1rem;
+    color: var(--bs-primary-text-emphasis);
+}
+
+.agent-message {
+    background-color: var(--bs-dark);
+    border-left: 4px solid var(--bs-info);
+    margin-right: 2rem;
+    margin-left: 1rem;
+    color: var(--bs-light);
 }
 
 .message:last-child {
     margin-bottom: 0;
 }
 
-.agent-response {
-    margin-bottom: 0.5rem;
+/* Tab styles */
+.nav-tabs {
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.nav-tabs .nav-link {
+    color: var(--bs-body-color);
+    border: none;
     padding: 0.75rem 1rem;
-    border-radius: 0.25rem;
-    background-color: var(--bs-dark-bg-subtle);
+    margin-right: 0.25rem;
+    border-radius: 0.5rem 0.5rem 0 0;
+    transition: all 0.2s ease;
+}
+
+.nav-tabs .nav-link:hover {
+    background-color: var(--bs-tertiary-bg);
+    border-color: transparent;
+}
+
+.nav-tabs .nav-link.active {
+    color: var(--bs-primary);
+    background-color: var(--bs-body-bg);
+    border-bottom: 2px solid var(--bs-primary);
+}
+
+/* Agent response styles */
+.agent-response {
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    background-color: var(--bs-dark);
+    color: var(--bs-light);
+    transition: all 0.2s ease;
+}
+
+.agent-response:last-child {
+    margin-bottom: 0;
 }
 
 .agent-label {
+    font-size: 1.1rem;
     font-weight: bold;
-    margin-bottom: 0.5rem;
-    padding-bottom: 0.25rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--bs-light);
 }
 
-/* Agent label colors with improved contrast */
-.agent-label[data-agent="PM"] {
-    color: var(--bs-info-text-emphasis);
-    border-bottom: 2px solid var(--bs-info);
+/* Context styles with improved display */
+.context-info {
+    font-size: 0.95rem;
+    padding: 1rem;
+    margin: 0.75rem 0;
+    background-color: var(--bs-dark-bg-subtle);
+    border-radius: 0.5rem;
+    border-left: 3px solid var(--bs-secondary);
+    color: var(--bs-light);
+    display: none;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bs-secondary) var(--bs-dark);
 }
 
-.agent-label[data-agent="BUSINESS ANALYST"] {
-    color: var(--bs-purple-text-emphasis);
-    border-bottom: 2px solid var(--bs-purple);
+.context-info p {
+    margin-bottom: 0.75rem;
+    line-height: 1.6;
+    padding: 0.25rem 0;
 }
 
-.agent-label[data-agent="DEVELOPER"] {
-    color: var(--bs-success-text-emphasis);
-    border-bottom: 2px solid var(--bs-success);
+.context-info p:last-child {
+    margin-bottom: 0;
 }
 
-.agent-label[data-agent="TESTER"] {
-    color: var(--bs-warning-text-emphasis);
-    border-bottom: 2px solid var(--bs-warning);
+.context-info.show {
+    display: block;
 }
 
-.agent-label[data-agent="DEVOPS"] {
-    color: var(--bs-danger-text-emphasis);
-    border-bottom: 2px solid var(--bs-danger);
+.context-toggle {
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--bs-gray-400);
+    background: none;
+    border: none;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.25rem;
+    transition: all 0.2s ease;
 }
 
-.agent-label[data-agent="UX DESIGNER"] {
-    color: var(--bs-cyan-text-emphasis);
-    border-bottom: 2px solid var(--bs-cyan);
+.context-toggle:hover {
+    color: var(--bs-primary);
+    background-color: var(--bs-dark-bg-subtle);
 }
 
+/* Agent-specific colors */
+.agent-label[data-agent="PM"],
+[data-agent="pm"] .agent-response {
+    color: var(--bs-info);
+    border-color: var(--bs-info);
+}
+
+.agent-label[data-agent="BUSINESS ANALYST"],
+[data-agent="ba"] .agent-response {
+    color: var(--bs-purple);
+    border-color: var(--bs-purple);
+}
+
+.agent-label[data-agent="DEVELOPER"],
+[data-agent="dev"] .agent-response {
+    color: var(--bs-success);
+    border-color: var(--bs-success);
+}
+
+.agent-label[data-agent="TESTER"],
+[data-agent="tester"] .agent-response {
+    color: var(--bs-warning);
+    border-color: var(--bs-warning);
+}
+
+.agent-label[data-agent="DEVOPS"],
+[data-agent="devops"] .agent-response {
+    color: var(--bs-danger);
+    border-color: var(--bs-danger);
+}
+
+.agent-label[data-agent="UX DESIGNER"],
+[data-agent="uxd"] .agent-response {
+    color: var(--bs-cyan);
+    border-color: var(--bs-cyan);
+}
+
+/* Response text styles */
 .response-text {
     white-space: pre-wrap;
-    line-height: 1.5;
+    line-height: 1.6;
+    font-size: 1rem;
+    padding-left: 1rem;
+    color: var(--bs-light);
 }
 
-/* Agent response styling with improved contrast */
-.agent-response[data-agent="PM"] {
-    background-color: rgba(13, 202, 240, 0.15);
-    border-left: 4px solid var(--bs-info);
-    color: var(--bs-info-text-emphasis);
+/* Tab content transitions */
+.tab-content > .tab-pane {
+    display: none;
 }
 
-.agent-response[data-agent="BUSINESS ANALYST"] {
-    background-color: rgba(111, 66, 193, 0.15);
-    border-left: 4px solid var(--bs-purple);
-    color: var(--bs-purple-text-emphasis);
+.tab-content > .active {
+    display: block;
+    animation: fadeIn 0.2s ease-in;
 }
 
-.agent-response[data-agent="DEVELOPER"] {
-    background-color: rgba(25, 135, 84, 0.15);
-    border-left: 4px solid var(--bs-success);
-    color: var(--bs-success-text-emphasis);
-}
-
-.agent-response[data-agent="TESTER"] {
-    background-color: rgba(255, 193, 7, 0.15);
-    border-left: 4px solid var(--bs-warning);
-    color: var(--bs-warning-text-emphasis);
-}
-
-.agent-response[data-agent="DEVOPS"] {
-    background-color: rgba(220, 53, 69, 0.15);
-    border-left: 4px solid var(--bs-danger);
-    color: var(--bs-danger-text-emphasis);
-}
-
-.agent-response[data-agent="UX DESIGNER"] {
-    background-color: rgba(0, 200, 215, 0.15);
-    border-left: 4px solid var(--bs-cyan);
-    color: var(--bs-cyan-text-emphasis);
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 /* Graph visualization styles with improved contrast and readability */
