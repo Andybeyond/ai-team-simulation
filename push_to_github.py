@@ -100,12 +100,17 @@ def print_progress(current, total, message=""):
     sys.stdout.flush()
 
 def push_batch(github, repo_name, files, batch_num, total_batches):
-    """Push a batch of files with retries."""
+    """Push a batch of files with retries and detailed progress tracking."""
     max_retries = 3
     retry_delay = 5
     
     for attempt in range(max_retries):
         try:
+            print(f"\nAttempting to push batch {batch_num}/{total_batches}")
+            print(f"Files in this batch:")
+            for file_info in files:
+                print(f"- {file_info['path']}")
+            
             commit_result = github.commit_files(
                 repo_name=repo_name,
                 files=files,
@@ -117,14 +122,14 @@ def push_batch(github, repo_name, files, batch_num, total_batches):
             
             print(f"\nError in batch {batch_num}: {commit_result.get('error', 'Unknown error')}")
             if attempt < max_retries - 1:
-                print(f"Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                print(f"Retrying batch in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
                 time.sleep(retry_delay)
                 retry_delay *= 2  # Exponential backoff
             
         except Exception as e:
             print(f"\nError pushing batch {batch_num}: {str(e)}")
             if attempt < max_retries - 1:
-                print(f"Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                print(f"Retrying batch in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
                 time.sleep(retry_delay)
                 retry_delay *= 2
     
@@ -136,7 +141,6 @@ def main():
         github = GitHubIntegration()
         repo_name = 'ai-team-simulation'
         
-        # Get all project files
         print("Gathering project files...")
         files = get_all_project_files()
         total_files = len(files)
@@ -147,7 +151,6 @@ def main():
             
         print(f"Found {total_files} files to push")
         
-        # Initialize repository
         print("\nInitializing repository...")
         init_result = github.initialize_repository(repo_name)
         if not init_result['success']:
@@ -156,18 +159,22 @@ def main():
         
         print(f"Repository initialized: {init_result['repo_url']}")
         
-        # Commit files in smaller batches with improved error handling
-        batch_size = 5  # Reduced batch size for better reliability
+        # Reduced batch size and improved progress tracking
+        batch_size = 3  # Reduced from 5 to 3 files per batch
         total_batches = (total_files + batch_size - 1) // batch_size
         processed_files = []
         failed_batches = []
+        
+        print(f"\nPreparing to push {total_files} files in {total_batches} batches")
+        print(f"Batch size: {batch_size} files per batch")
         
         for batch_num in range(total_batches):
             start_idx = batch_num * batch_size
             end_idx = min(start_idx + batch_size, total_files)
             batch_files = files[start_idx:end_idx]
             
-            print(f"\nPushing batch {batch_num + 1}/{total_batches} ({len(batch_files)} files)...")
+            print(f"\nPushing batch {batch_num + 1}/{total_batches}")
+            print(f"Files {start_idx + 1} to {end_idx} of {total_files}")
             
             result = push_batch(github, repo_name, batch_files, batch_num + 1, total_batches)
             
@@ -179,9 +186,11 @@ def main():
                 print(f"\nBatch {batch_num + 1} failed after all retries")
                 failed_batches.append((batch_num + 1, batch_files))
             
-            # Small delay between batches to avoid rate limiting
+            # Increased delay between batches
             if batch_num < total_batches - 1:
-                time.sleep(3)
+                delay = 5  # Increased from 3 to 5 seconds
+                print(f"\nWaiting {delay} seconds before next batch...")
+                time.sleep(delay)
         
         # Report results
         if processed_files:
@@ -191,8 +200,10 @@ def main():
             
             if failed_batches:
                 print("\nFailed batches:")
-                for batch_num, _ in failed_batches:
-                    print(f"- Batch {batch_num}")
+                for batch_num, failed_files in failed_batches:
+                    print(f"\nBatch {batch_num}:")
+                    for file_info in failed_files:
+                        print(f"- {file_info['path']}")
                 return False
             return True
         else:
