@@ -1,6 +1,6 @@
 import os
 from github import Github, GithubException, InputGitTreeElement, RateLimitExceededException
-from typing import Dict, Union, Optional
+from typing import Dict, Union, Optional, Mapping
 import base64
 from pathlib import Path
 import time
@@ -13,10 +13,9 @@ class GitHubIntegration:
             raise ValueError("GITHUB_TOKEN environment variable is not set")
         
         try:
-            # Validate token by attempting to get user information
             self.github = Github(self.token)
             self.user = self.github.get_user()
-            # Try to access user data to validate token
+            # Validate token by attempting to get user information
             self.user.login
         except GithubException as e:
             if e.status == 401:
@@ -28,23 +27,27 @@ class GitHubIntegration:
         except Exception as e:
             raise ValueError(f"Failed to initialize GitHub integration: {str(e)}")
 
-    def _check_rate_limit(self):
+    def _check_rate_limit(self) -> bool:
         """Check and handle GitHub API rate limits."""
-        rate_limit = self.github.get_rate_limit()
-        core_remaining = rate_limit.core.remaining
-        
-        if core_remaining < 10:  # Buffer of 10 requests
-            reset_timestamp = rate_limit.core.reset.timestamp()
-            current_timestamp = time.time()
-            sleep_time = reset_timestamp - current_timestamp + 1
+        try:
+            rate_limit = self.github.get_rate_limit()
+            core_remaining = rate_limit.core.remaining
             
-            if sleep_time > 0:
-                print(f"\nRate limit approaching, waiting {int(sleep_time)} seconds...")
-                time.sleep(sleep_time)
-                return True
-        return False
+            if core_remaining < 10:  # Buffer of 10 requests
+                reset_timestamp = rate_limit.core.reset.timestamp()
+                current_timestamp = time.time()
+                sleep_time = reset_timestamp - current_timestamp + 1
+                
+                if sleep_time > 0:
+                    print(f"\nRate limit approaching, waiting {int(sleep_time)} seconds...")
+                    time.sleep(sleep_time)
+                    return True
+            return False
+        except Exception as e:
+            print(f"Warning: Rate limit check failed - {str(e)}")
+            return False
 
-    def _handle_github_error(self, e: Exception) -> Dict[str, Union[bool, str]]:
+    def _handle_github_error(self, e: Exception) -> Mapping[str, Union[bool, str]]:
         """Handle GitHub-related errors with user-friendly messages."""
         if isinstance(e, RateLimitExceededException):
             reset_time = self.github.rate_limiting_resettime
@@ -52,8 +55,7 @@ class GitHubIntegration:
             return {
                 'success': False,
                 'error': f'Rate limit exceeded. Reset in {wait_time} seconds.',
-                'error_code': 'RATE_LIMIT',
-                'wait_time': wait_time
+                'error_code': 'RATE_LIMIT'
             }
         elif isinstance(e, GithubException):
             if e.status == 401:
@@ -77,7 +79,7 @@ class GitHubIntegration:
             else:
                 return {
                     'success': False,
-                    'error': f'GitHub API error: {str(e)}',
+                    'error': f'GitHub API error ({e.status}): {str(e)}',
                     'error_code': 'API_ERROR'
                 }
         return {
@@ -86,7 +88,7 @@ class GitHubIntegration:
             'error_code': 'UNEXPECTED_ERROR'
         }
 
-    def _serialize_repo_info(self, repo) -> Dict[str, Union[str, bool, None]]:
+    def _serialize_repo_info(self, repo) -> Mapping[str, Union[str, bool, None]]:
         """Serialize repository information into a JSON-friendly format."""
         return {
             'name': str(repo.name),
@@ -101,12 +103,11 @@ class GitHubIntegration:
             'updated_at': repo.updated_at.isoformat() if repo.updated_at else None
         }
 
-    def create_repository(self, name: str, description: Optional[str] = None, private: bool = False) -> Dict[str, Union[bool, str, dict]]:
+    def create_repository(self, name: str, description: Optional[str] = None, private: bool = False) -> Mapping[str, Union[bool, str, Mapping]]:
         """Create a new GitHub repository with enhanced error handling."""
         try:
             self._check_rate_limit()
             
-            # Validate repository name
             if not name or not name.strip():
                 return {
                     'success': False,
@@ -114,8 +115,8 @@ class GitHubIntegration:
                     'error_code': 'INVALID_NAME'
                 }
 
-            # Create repository with proper method
-            repo = self.github.get_user().create_repo(
+            # Create repository
+            repo = self.user.create_repository(
                 name=name,
                 description=description or "AI Team Simulation using LangChain-powered agents",
                 private=private,
@@ -136,7 +137,7 @@ class GitHubIntegration:
         except Exception as e:
             return self._handle_github_error(e)
 
-    def get_repository(self, name: str) -> Dict[str, Union[bool, str, dict]]:
+    def get_repository(self, name: str) -> Mapping[str, Union[bool, str, Mapping]]:
         """Get repository information with enhanced error handling."""
         try:
             self._check_rate_limit()
@@ -161,7 +162,7 @@ class GitHubIntegration:
         except Exception as e:
             return self._handle_github_error(e)
 
-    def initialize_repository(self, name: str, description: Optional[str] = None) -> Dict[str, Union[bool, str, dict]]:
+    def initialize_repository(self, name: str, description: Optional[str] = None) -> Mapping[str, Union[bool, str, Mapping]]:
         """Initialize or get existing repository with enhanced error handling."""
         if not name or not name.strip():
             return {
@@ -175,13 +176,13 @@ class GitHubIntegration:
             return {
                 'success': True,
                 'repo_info': existing_repo['repo_info'],
-                'repo_url': str(existing_repo['repo_url']),
-                'clone_url': str(existing_repo['clone_url']),
+                'repo_url': existing_repo['repo_url'],
+                'clone_url': existing_repo['clone_url'],
                 'message': 'Using existing repository'
             }
         return self.create_repository(name, description)
 
-    def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Dict[str, Union[bool, str, dict, list]]:
+    def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Mapping[str, Union[bool, str, list]]:
         """Commit multiple files to the repository with improved error handling and progress tracking."""
         try:
             self._check_rate_limit()
@@ -228,15 +229,31 @@ class GitHubIntegration:
                         
                     with open(file_path, 'rb') as f:
                         content = f.read()
+                        
+                        # Skip empty files
                         if not content.strip():
                             print(f"Warning: Skipping empty file - {file_path}")
                             continue
                         
                         # Check rate limit before creating blob
-                        self._check_rate_limit()
+                        if self._check_rate_limit():
+                            print("Resumed after rate limit wait")
                         
                         try:
-                            blob = repo.create_git_blob(base64.b64encode(content).decode(), 'base64')
+                            # Create blob with retries
+                            max_retries = 3
+                            retry_count = 0
+                            while retry_count < max_retries:
+                                try:
+                                    blob = repo.create_git_blob(base64.b64encode(content).decode(), 'base64')
+                                    break
+                                except GithubException as e:
+                                    retry_count += 1
+                                    if retry_count == max_retries:
+                                        raise e
+                                    print(f"Retrying blob creation for {file_path} (attempt {retry_count + 1})")
+                                    time.sleep(2)
+                            
                             element = InputGitTreeElement(
                                 path=str(file_path),
                                 mode='100644',
@@ -264,16 +281,22 @@ class GitHubIntegration:
             # Create tree and commit with error handling
             try:
                 # Check rate limit before creating tree
-                self._check_rate_limit()
+                if self._check_rate_limit():
+                    print("Resumed after rate limit wait")
+                    
                 tree = repo.create_git_tree(element_list, base_tree)
                 
                 # Check rate limit before creating commit
-                self._check_rate_limit()
+                if self._check_rate_limit():
+                    print("Resumed after rate limit wait")
+                    
                 parent = [commit]
                 commit = repo.create_git_commit(commit_message, tree, parent)
                 
                 # Check rate limit before updating reference
-                self._check_rate_limit()
+                if self._check_rate_limit():
+                    print("Resumed after rate limit wait")
+                    
                 ref.edit(commit.sha)
             except GithubException as e:
                 return self._handle_github_error(e)
