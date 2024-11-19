@@ -9,13 +9,18 @@ from agents.devops import DevOpsAgent
 from agents.business_analyst import BusinessAnalystAgent
 from agents.ux_designer import UXDesignerAgent
 from github_integration import GitHubIntegration
+from database import db, Project, ChatMessage, init_db
 import json
 from pathlib import Path
 from typing import Union, Tuple, Optional
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "a secret key"
+
+# Initialize database
+init_db(app)
 
 # Validate OpenAI API key
 if not os.environ.get("OPENAI_API_KEY"):
@@ -31,22 +36,6 @@ ux_designer = UXDesignerAgent()
 
 # Initialize GitHub integration
 github = GitHubIntegration()
-
-# Available projects configuration
-PROJECTS = {
-    'stock_trading_ai': {
-        'name': 'Stock Trading AI',
-        'description': 'An autonomous AI agent for stock trading analysis and recommendations',
-        'status': 'In Development',
-        'docs_path': '/projects/stock_trading_ai/docs'
-    },
-    'email_ai_agent': {
-        'name': 'Email AI Agent',
-        'description': 'An AI-powered email management and response automation system',
-        'status': 'New',
-        'docs_path': '/projects/email_ai_agent/docs'
-    }
-}
 
 def create_project_structure(project_id: str) -> None:
     """Create the project directory structure with documentation templates."""
@@ -82,22 +71,17 @@ def create_project_structure(project_id: str) -> None:
 @app.route('/')
 def index() -> Union[str, Tuple[Response, int]]:
     try:
-        return render_template('index.html', projects=PROJECTS)
+        projects = {str(p.id): {
+            'name': p.name,
+            'description': p.description,
+            'status': p.status,
+            'docs_path': p.docs_path
+        } for p in Project.query.all()}
+        return render_template('index.html', projects=projects)
     except Exception as e:
         return jsonify({
             'success': False,
             'error': 'Failed to load index page',
-            'details': str(e)
-        }), 500
-
-@app.route('/relationships')
-def relationships() -> Union[str, Tuple[Response, int]]:
-    try:
-        return render_template('agent_relationships.html')
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': 'Failed to load relationships page',
             'details': str(e)
         }), 500
 
@@ -106,9 +90,15 @@ def handle_projects() -> Union[Response, Tuple[Response, int]]:
     """Handle project listing and creation."""
     if request.method == 'GET':
         try:
+            projects = {str(p.id): {
+                'name': p.name,
+                'description': p.description,
+                'status': p.status,
+                'docs_path': p.docs_path
+            } for p in Project.query.all()}
             return jsonify({
                 'success': True,
-                'projects': PROJECTS
+                'projects': projects
             })
         except Exception as e:
             return jsonify({
@@ -150,7 +140,7 @@ def handle_projects() -> Union[Response, Tuple[Response, int]]:
                 }), 400
                 
             # Check if project ID already exists
-            if project_id in PROJECTS:
+            if Project.query.get(project_id):
                 return jsonify({
                     'success': False,
                     'error': 'Project ID already exists'
@@ -159,13 +149,16 @@ def handle_projects() -> Union[Response, Tuple[Response, int]]:
             # Create project structure
             create_project_structure(project_id)
             
-            # Add project to PROJECTS dictionary
-            PROJECTS[project_id] = {
-                'name': project_name,
-                'description': project_description,
-                'status': 'New',
-                'docs_path': f'/projects/{project_id}/docs'
-            }
+            # Create project in database
+            new_project = Project(
+                id=project_id,
+                name=project_name,
+                description=project_description,
+                status='New',
+                docs_path=f'/projects/{project_id}/docs'
+            )
+            db.session.add(new_project)
+            db.session.commit()
             
             return jsonify({
                 'success': True,
@@ -173,6 +166,7 @@ def handle_projects() -> Union[Response, Tuple[Response, int]]:
             })
             
         except Exception as e:
+            db.session.rollback()
             return jsonify({
                 'success': False,
                 'error': str(e)
@@ -182,15 +176,15 @@ def handle_projects() -> Union[Response, Tuple[Response, int]]:
 def get_project_context(project_id: str) -> Union[Response, Tuple[Response, int]]:
     """Get context for a specific project"""
     try:
-        if project_id not in PROJECTS:
+        project = Project.query.get(project_id)
+        if not project:
             return jsonify({
                 'success': False,
                 'error': 'Project not found'
             }), 404
 
         # Load project documentation
-        project = PROJECTS[project_id]
-        docs_path = project['docs_path'].lstrip('/')
+        docs_path = project.docs_path.lstrip('/')
         
         # Get project README content
         readme_path = f"{docs_path}/README.md"
@@ -200,54 +194,37 @@ def get_project_context(project_id: str) -> Union[Response, Tuple[Response, int]
         except:
             readme_content = "Project documentation not available"
 
+        # Get recent chat history
+        recent_messages = ChatMessage.query.filter_by(project_id=project_id)\
+            .order_by(ChatMessage.created_at.desc())\
+            .limit(10)\
+            .all()
+            
+        chat_history = [{
+            'agent_type': msg.agent_type,
+            'message_type': msg.message_type,
+            'content': msg.content,
+            'context_summary': msg.context_summary,
+            'timestamp': msg.created_at.isoformat()
+        } for msg in reversed(recent_messages)]
+
         # Generate welcome message
-        welcome_message = f"Welcome to Project {project['name']}! I'm here to help with {project['description']}"
+        welcome_message = f"Welcome to Project {project.name}! I'm here to help with {project.description}"
 
         return jsonify({
             'success': True,
-            'project': project,
+            'project': {
+                'name': project.name,
+                'description': project.description,
+                'status': project.status,
+                'docs_path': project.docs_path
+            },
             'context': {
                 'readme': readme_content,
-                'welcome_message': welcome_message
+                'welcome_message': welcome_message,
+                'chat_history': chat_history
             }
         })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/github')
-def github_page() -> Union[str, Tuple[Response, int]]:
-    try:
-        return render_template('github_init.html')
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': 'Failed to load GitHub initialization page',
-            'details': str(e)
-        }), 500
-
-@app.route('/github/init', methods=['POST'])
-def init_github() -> Union[Response, Tuple[Response, int]]:
-    try:
-        if not request.is_json:
-            return jsonify({
-                'success': False,
-                'error': 'Content-Type must be application/json'
-            }), 400
-
-        data = request.get_json()
-        if not data:
-            return jsonify({
-                'success': False,
-                'error': 'Request body is empty'
-            }), 400
-
-        repo_name = data.get('repo_name', 'ai-team-simulation')
-        description = data.get('description')
-        result = github.initialize_repository(repo_name, description)
-        return jsonify(result)
     except Exception as e:
         return jsonify({
             'success': False,
@@ -257,14 +234,12 @@ def init_github() -> Union[Response, Tuple[Response, int]]:
 @app.route('/interact', methods=['POST'])
 def interact() -> Union[Response, Tuple[Response, int]]:
     try:
-        # Validate request content type
         if not request.is_json:
             return jsonify({
                 'success': False,
                 'error': 'Content-Type must be application/json'
             }), 400
 
-        # Parse request data
         data = request.get_json()
         if not data:
             return jsonify({
@@ -273,24 +248,41 @@ def interact() -> Union[Response, Tuple[Response, int]]:
             }), 400
 
         user_input = data.get('message')
-        agent_type = data.get('agent', 'pm')  # Default to project manager
-        project_id = data.get('project')  # Get project context
+        agent_type = data.get('agent', 'pm')
+        project_id = data.get('project')
 
-        # Validate required fields
         if not user_input:
             return jsonify({
                 'success': False,
                 'error': 'Message field is required'
             }), 400
+        
+        # Verify project exists
+        project = Project.query.get(project_id) if project_id else None
+        if project_id and not project:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid project ID'
+            }), 400
 
-        # Get project context if project_id is provided
+        # Store user message
+        if project:
+            user_message = ChatMessage(
+                project_id=project_id,
+                agent_type=agent_type,
+                message_type='user',
+                content=user_input
+            )
+            db.session.add(user_message)
+            db.session.commit()
+
+        # Get project context
         project_context = None
-        if project_id and project_id in PROJECTS:
-            project = PROJECTS[project_id]
+        if project:
             project_context = {
-                'project_name': project['name'],
-                'project_description': project['description'],
-                'project_status': project['status']
+                'project_name': project.name,
+                'project_description': project.description,
+                'project_status': project.status
             }
 
         # Map agent type to corresponding agent and their display names
@@ -303,10 +295,6 @@ def interact() -> Union[Response, Tuple[Response, int]]:
             'uxd': (ux_designer, 'UX DESIGNER')
         }
 
-        print(f"\n[DEBUG] Starting interaction with agent type: {agent_type}")
-        if project_context:
-            print(f"[DEBUG] Project context: {project_context}")
-
         selected_agent, display_name = agents.get(agent_type, (None, None))
         if not selected_agent:
             return jsonify({
@@ -318,17 +306,27 @@ def interact() -> Union[Response, Tuple[Response, int]]:
         used_agents = set()
         
         # Process initial response with project context
-        print(f"[DEBUG] Processing initial response from {display_name}")
         context = {'project': project_context} if project_context else None
         result = selected_agent.process_input(user_input, context)
+        
+        # Store agent response
+        if project:
+            agent_message = ChatMessage(
+                project_id=project_id,
+                agent_type=agent_type,
+                message_type='agent',
+                content=result['response'],
+                context_summary=result.get('context_summary')
+            )
+            db.session.add(agent_message)
+            db.session.commit()
         
         # Include context summary in response
         response = f"{display_name}: {result['response']}"
         if result.get('context_summary'):
-            print(f"[DEBUG] Context summary available for {display_name}")
             response = f"{display_name} (with context from: {result['context_summary']})\n{result['response']}"
 
-        # Initialize collaboration tracking with proper structure
+        # Initialize collaboration tracking
         collaboration_context = {}
         
         # Add initial response to context
@@ -341,30 +339,24 @@ def interact() -> Union[Response, Tuple[Response, int]]:
         used_agents.add(agent_type)
 
         needs_collaboration = result.get('needs_collaboration', [])
-        print(f"[DEBUG] Initial agent needs collaboration with: {needs_collaboration}")
 
         # Process collaboration chain
         if needs_collaboration:
             collaboration_queue = [(agent_type, collab_type) 
                                for collab_type in needs_collaboration]
             
-            print(f"[DEBUG] Initial collaboration queue: {collaboration_queue}")
-            
             while collaboration_queue:
                 parent_type, collab_type = collaboration_queue.pop(0)
-                print(f"\n[DEBUG] Processing collaboration: {parent_type} -> {collab_type}")
                 
                 if collab_type in used_agents:
-                    print(f"[DEBUG] Skipping {collab_type} - already processed")
                     continue
                     
                 collab_agent, collab_display_name = agents.get(collab_type, (None, None))
                 if not collab_agent:
-                    print(f"[DEBUG] Invalid collaboration agent type: {collab_type}")
                     continue
 
                 try:
-                    # Prepare context with previous responses and memory
+                    # Prepare context with previous responses
                     collab_context = {
                         'previous_responses': {
                             agent_type: info['response']
@@ -372,24 +364,34 @@ def interact() -> Union[Response, Tuple[Response, int]]:
                         }
                     }
                     
-                    # Add project context if available
+                    # Add project context
                     if project_context:
                         collab_context['project'] = project_context
 
-                    # Add specific requests from parent agent if they exist
+                    # Add specific requests from parent agent
                     parent_requests = collaboration_context[parent_type].get('requests', {})
                     if collab_type in parent_requests:
                         collab_context['requests'] = parent_requests[collab_type]
-                        print(f"[DEBUG] Added specific requests for {collab_type}: {collab_context['requests']}")
 
                     # Get collaboration response
-                    print(f"[DEBUG] Getting response from {collab_display_name}")
                     collab_result = collab_agent.process_input(user_input, collab_context)
                     
-                    # Add to used agents to prevent duplicates
+                    # Store collaborator response
+                    if project:
+                        collab_message = ChatMessage(
+                            project_id=project_id,
+                            agent_type=collab_type,
+                            message_type='agent',
+                            content=collab_result['response'],
+                            context_summary=collab_result.get('context_summary')
+                        )
+                        db.session.add(collab_message)
+                        db.session.commit()
+                    
+                    # Add to used agents
                     used_agents.add(collab_type)
                     
-                    # Update collaboration context with memory information
+                    # Update collaboration context
                     collaboration_context[collab_type] = {
                         'response': collab_result['response'],
                         'display_name': collab_display_name,
@@ -397,29 +399,21 @@ def interact() -> Union[Response, Tuple[Response, int]]:
                         'context_summary': collab_result.get('context_summary')
                     }
                     
-                    # Add formatted response with context if available
+                    # Add formatted response
                     if collab_result.get('context_summary'):
                         response += f"\n\n{collab_display_name} (with context from: {collab_result['context_summary']})\n{collab_result['response']}"
                     else:
                         response += f"\n\n{collab_display_name}: {collab_result['response']}"
-                    
-                    print(f"[DEBUG] Added response from {collab_display_name}")
 
                     # Handle nested collaboration
                     nested_collaboration = collab_result.get('needs_collaboration', [])
                     if nested_collaboration:
-                        print(f"[DEBUG] {collab_display_name} needs nested collaboration with: {nested_collaboration}")
                         for nested_type in nested_collaboration:
                             if nested_type not in used_agents:
                                 collaboration_queue.append((collab_type, nested_type))
-                                print(f"[DEBUG] Added to queue: {collab_type} -> {nested_type}")
 
                 except Exception as e:
-                    print(f"[DEBUG] Error in collaboration with {collab_type}: {str(e)}")
                     continue
-
-        print("[DEBUG] Final collaboration context:", collaboration_context.keys())
-        print("[DEBUG] Used agents:", used_agents)
 
         return jsonify({
             'success': True,
@@ -427,7 +421,7 @@ def interact() -> Union[Response, Tuple[Response, int]]:
         })
 
     except Exception as e:
-        print(f"[DEBUG] Error in /interact: {str(e)}")
+        db.session.rollback()
         return jsonify({
             'success': False,
             'error': 'An error occurred while processing your request',
@@ -435,4 +429,4 @@ def interact() -> Union[Response, Tuple[Response, int]]:
         }), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=True)
