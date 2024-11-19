@@ -8,7 +8,6 @@ class BaseAgent:
     def __init__(self, agent_type, system_message_content):
         self.agent_type = agent_type
         self.llm = ChatOpenAI(
-            api_key=os.environ.get("OPENAI_API_KEY"),
             model="gpt-4",
             temperature=0.7
         )
@@ -22,17 +21,17 @@ class BaseAgent:
         
     def process_input(self, user_input: str, context: dict = None) -> dict:
         try:
-            # Get chat history
+            # Get complete chat history without truncation
             history = self.memory.chat_memory.messages
             
-            # Construct a detailed prompt with context and history
+            # Construct a detailed prompt with full context and history
             prompt = self._build_prompt(user_input, context, history)
             
             # Add the user input to memory
             self.memory.chat_memory.add_user_message(user_input)
             
             # Generate response using the complete context
-            response = self.llm.predict(prompt)
+            response = self.llm.invoke(prompt).content
             
             # Add response to memory
             self.memory.chat_memory.add_ai_message(response)
@@ -40,7 +39,7 @@ class BaseAgent:
             # Parse response for collaboration needs and extract any specific requests
             needs_collaboration, collaboration_requests = self._analyze_collaboration_needs(response)
             
-            # Get context summary from memory
+            # Get complete context summary from memory
             context_summary = self._get_context_summary()
             
             return {
@@ -53,7 +52,7 @@ class BaseAgent:
         except Exception as e:
             return {
                 'response': f"Error processing request: {str(e)}",
-                'needs_collaboration': False,
+                'needs_collaboration': [],
                 'collaboration_requests': {},
                 'agent_type': self.agent_type,
                 'context_summary': None
@@ -62,43 +61,50 @@ class BaseAgent:
     def _build_prompt(self, user_input: str, context: dict = None, history: list = None) -> str:
         prompt = f"{self.system_message.content}\n\n"
         
-        # Add conversation history context
+        # Add complete conversation history without truncation
         if history:
             prompt += "Previous conversation history:\n"
-            for msg in history[-5:]:  # Only include last 5 messages for context
+            for msg in history:
                 if isinstance(msg, HumanMessage):
                     prompt += f"User: {msg.content}\n"
                 elif isinstance(msg, AIMessage):
                     prompt += f"{self.agent_type.upper()}: {msg.content}\n"
             prompt += "\n"
         
-        # Add inter-agent context if available
+        # Add complete context if available
         if context:
-            prompt += "Previous agent responses:\n"
-            for agent_type, response in context.items():
-                prompt += f"{agent_type.upper()}: {response}\n"
-            prompt += "\nConsider the above context while formulating your response.\n"
+            if context.get('project'):
+                prompt += "Project Context:\n"
+                for key, value in context['project'].items():
+                    prompt += f"{key}: {value}\n"
+                prompt += "\n"
             
-        prompt += f"\nUser input: {user_input}\n"
-        prompt += "\nIf you need input from other agents, clearly indicate what you need from them using tags like: "
-        prompt += "[NEED_DEV: specify technical implementation details] "
-        prompt += "[NEED_TEST: specify testing requirements] "
-        prompt += "[NEED_DEVOPS: specify deployment needs] "
-        prompt += "[NEED_PM: specify project management aspects] "
+            if context.get('previous_responses'):
+                prompt += "Previous agent responses:\n"
+                for agent_type, response in context['previous_responses'].items():
+                    prompt += f"{agent_type.upper()}: {response}\n"
+                prompt += "\n"
+            
+            if context.get('requests'):
+                prompt += "Specific requests:\n"
+                if isinstance(context['requests'], list):
+                    for request in context['requests']:
+                        prompt += f"- {request}\n"
+                elif isinstance(context['requests'], str):
+                    prompt += f"- {context['requests']}\n"
+                prompt += "\n"
+        
+        prompt += f"User input: {user_input}\n\n"
+        prompt += "If you need input from other agents, clearly indicate what you need from them using tags like:\n"
+        prompt += "[NEED_DEV: specify technical implementation details]\n"
+        prompt += "[NEED_TEST: specify testing requirements]\n"
+        prompt += "[NEED_DEVOPS: specify deployment needs]\n"
+        prompt += "[NEED_PM: specify project management aspects]\n"
         prompt += "[NEED_BA: specify business analysis needs]"
         
         return prompt
     
     def _analyze_collaboration_needs(self, response: str) -> tuple:
-        collaboration_keywords = {
-            'dev': ['code', 'implementation', 'develop', 'technical', 'architecture', 'framework'],
-            'tester': ['test', 'quality', 'verify', 'validation', 'coverage', 'scenario'],
-            'devops': ['deploy', 'infrastructure', 'pipeline', 'monitoring', 'scaling', 'performance'],
-            'pm': ['plan', 'coordinate', 'timeline', 'requirements', 'scope', 'milestone'],
-            'ba': ['business requirements', 'stakeholder', 'process improvement', 'feasibility', 'specification']
-        }
-        
-        # Check for explicit collaboration requests using tags
         need_patterns = {
             'dev': r'\[NEED_DEV:(.*?)\]',
             'tester': r'\[NEED_TEST:(.*?)\]',
@@ -109,41 +115,44 @@ class BaseAgent:
         
         needed_agents = []
         collaboration_requests = {}
-        response_lower = response.lower()
         
-        # Check for explicit requests
+        # Check for collaboration requests using enhanced pattern matching
         for agent, pattern in need_patterns.items():
             if agent != self.agent_type:
-                matches = re.findall(pattern, response, re.IGNORECASE)
+                matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
                 if matches:
                     needed_agents.append(agent)
                     collaboration_requests[agent] = [req.strip() for req in matches]
         
-        # Check for implicit mentions using keywords
-        for agent, keywords in collaboration_keywords.items():
-            if agent not in needed_agents and agent != self.agent_type:
-                if any(keyword in response_lower for keyword in keywords):
-                    needed_agents.append(agent)
-                    if agent not in collaboration_requests:
-                        collaboration_requests[agent] = ["Please provide input based on the context"]
-        
         return needed_agents, collaboration_requests
-    
+
     def _get_context_summary(self) -> str:
-        """Get a summary of the conversation context"""
+        """Get complete conversation history with preserved formatting"""
         try:
             history = self.memory.chat_memory.messages
             if not history:
-                return "No previous context available."
+                return None
             
-            # Create a summary of the last few interactions
-            summary = []
-            for msg in history[-3:]:  # Last 3 messages
+            conversations = []
+            current_conversation = []
+            
+            # Process complete conversation history
+            for msg in history:
                 if isinstance(msg, HumanMessage):
-                    summary.append(f"User asked: {msg.content[:100]}...")
+                    # Start new conversation group
+                    if current_conversation:
+                        conversations.append("\n".join(current_conversation))
+                        current_conversation = []
+                    current_conversation.append(f"User asked:\n{msg.content}")
                 elif isinstance(msg, AIMessage):
-                    summary.append(f"Agent responded about: {msg.content[:100]}...")
+                    current_conversation.append(f"Agent responded:\n{msg.content}")
             
-            return "\n".join(summary)
+            # Add the last conversation if exists
+            if current_conversation:
+                conversations.append("\n".join(current_conversation))
+            
+            # Join conversations with clear separation while preserving formatting
+            return "\n\n---\n\n".join(conversations) if conversations else None
+            
         except Exception as e:
             return f"Error retrieving context: {str(e)}"

@@ -1,5 +1,6 @@
 import os
-from flask import Flask, render_template, request, jsonify
+import shutil
+from flask import Flask, render_template, request, jsonify, session, Response
 from flask_cors import CORS
 from agents.project_manager import ProjectManagerAgent
 from agents.developer import DeveloperAgent
@@ -8,6 +9,9 @@ from agents.devops import DevOpsAgent
 from agents.business_analyst import BusinessAnalystAgent
 from agents.ux_designer import UXDesignerAgent
 from github_integration import GitHubIntegration
+import json
+from pathlib import Path
+from typing import Union, Tuple, Optional
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -28,10 +32,57 @@ ux_designer = UXDesignerAgent()
 # Initialize GitHub integration
 github = GitHubIntegration()
 
+# Available projects configuration
+PROJECTS = {
+    'stock_trading_ai': {
+        'name': 'Stock Trading AI',
+        'description': 'An autonomous AI agent for stock trading analysis and recommendations',
+        'status': 'In Development',
+        'docs_path': '/projects/stock_trading_ai/docs'
+    },
+    'email_ai_agent': {
+        'name': 'Email AI Agent',
+        'description': 'An AI-powered email management and response automation system',
+        'status': 'New',
+        'docs_path': '/projects/email_ai_agent/docs'
+    }
+}
+
+def create_project_structure(project_id: str) -> None:
+    """Create the project directory structure with documentation templates."""
+    project_base = Path(f'projects/{project_id}')
+    
+    # Create main project directories
+    directories = [
+        'docs/api',
+        'docs/architecture',
+        'docs/meetings',
+        'docs/requirements',
+        'docs/technical',
+        'docs/templates',
+        'docs/testing',
+        'docs/user_guides',
+        'src',
+        'tests'
+    ]
+    
+    for directory in directories:
+        (project_base / directory).mkdir(parents=True, exist_ok=True)
+    
+    # Copy template files from existing project
+    template_source = Path('projects/stock_trading_ai/docs')
+    if template_source.exists():
+        for item in template_source.glob('**/*'):
+            if item.is_file():
+                relative_path = item.relative_to(template_source)
+                destination = project_base / 'docs' / relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, destination)
+
 @app.route('/')
-def index():
+def index() -> Union[str, Tuple[Response, int]]:
     try:
-        return render_template('index.html')
+        return render_template('index.html', projects=PROJECTS)
     except Exception as e:
         return jsonify({
             'success': False,
@@ -40,7 +91,7 @@ def index():
         }), 500
 
 @app.route('/relationships')
-def relationships():
+def relationships() -> Union[str, Tuple[Response, int]]:
     try:
         return render_template('agent_relationships.html')
     except Exception as e:
@@ -50,8 +101,124 @@ def relationships():
             'details': str(e)
         }), 500
 
+@app.route('/api/projects', methods=['GET', 'POST'])
+def handle_projects() -> Union[Response, Tuple[Response, int]]:
+    """Handle project listing and creation."""
+    if request.method == 'GET':
+        try:
+            return jsonify({
+                'success': True,
+                'projects': PROJECTS
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+            
+    elif request.method == 'POST':
+        try:
+            if not request.is_json:
+                return jsonify({
+                    'success': False,
+                    'error': 'Content-Type must be application/json'
+                }), 400
+
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': 'Request body is empty'
+                }), 400
+
+            project_id = data.get('id')
+            project_name = data.get('name')
+            project_description = data.get('description')
+            
+            # Validate required fields
+            if not all([project_id, project_name, project_description]):
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing required fields'
+                }), 400
+                
+            # Validate project ID format
+            if not project_id.replace('-', '').replace('_', '').isalnum():
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid project ID format'
+                }), 400
+                
+            # Check if project ID already exists
+            if project_id in PROJECTS:
+                return jsonify({
+                    'success': False,
+                    'error': 'Project ID already exists'
+                }), 400
+                
+            # Create project structure
+            create_project_structure(project_id)
+            
+            # Add project to PROJECTS dictionary
+            PROJECTS[project_id] = {
+                'name': project_name,
+                'description': project_description,
+                'status': 'New',
+                'docs_path': f'/projects/{project_id}/docs'
+            }
+            
+            return jsonify({
+                'success': True,
+                'message': f'Project "{project_name}" created successfully'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
+@app.route('/api/project/<project_id>/context', methods=['GET'])
+def get_project_context(project_id: str) -> Union[Response, Tuple[Response, int]]:
+    """Get context for a specific project"""
+    try:
+        if project_id not in PROJECTS:
+            return jsonify({
+                'success': False,
+                'error': 'Project not found'
+            }), 404
+
+        # Load project documentation
+        project = PROJECTS[project_id]
+        docs_path = project['docs_path'].lstrip('/')
+        
+        # Get project README content
+        readme_path = f"{docs_path}/README.md"
+        try:
+            with open(readme_path, 'r') as f:
+                readme_content = f.read()
+        except:
+            readme_content = "Project documentation not available"
+
+        # Generate welcome message
+        welcome_message = f"Welcome to Project {project['name']}! I'm here to help with {project['description']}"
+
+        return jsonify({
+            'success': True,
+            'project': project,
+            'context': {
+                'readme': readme_content,
+                'welcome_message': welcome_message
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/github')
-def github_page():
+def github_page() -> Union[str, Tuple[Response, int]]:
     try:
         return render_template('github_init.html')
     except Exception as e:
@@ -62,7 +229,7 @@ def github_page():
         }), 500
 
 @app.route('/github/init', methods=['POST'])
-def init_github():
+def init_github() -> Union[Response, Tuple[Response, int]]:
     try:
         if not request.is_json:
             return jsonify({
@@ -70,8 +237,15 @@ def init_github():
                 'error': 'Content-Type must be application/json'
             }), 400
 
-        repo_name = request.json.get('repo_name', 'ai-team-simulation')
-        description = request.json.get('description')
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body is empty'
+            }), 400
+
+        repo_name = data.get('repo_name', 'ai-team-simulation')
+        description = data.get('description')
         result = github.initialize_repository(repo_name, description)
         return jsonify(result)
     except Exception as e:
@@ -81,7 +255,7 @@ def init_github():
         }), 500
 
 @app.route('/interact', methods=['POST'])
-def interact():
+def interact() -> Union[Response, Tuple[Response, int]]:
     try:
         # Validate request content type
         if not request.is_json:
@@ -91,7 +265,7 @@ def interact():
             }), 400
 
         # Parse request data
-        data = request.json
+        data = request.get_json()
         if not data:
             return jsonify({
                 'success': False,
@@ -100,6 +274,7 @@ def interact():
 
         user_input = data.get('message')
         agent_type = data.get('agent', 'pm')  # Default to project manager
+        project_id = data.get('project')  # Get project context
 
         # Validate required fields
         if not user_input:
@@ -107,6 +282,16 @@ def interact():
                 'success': False,
                 'error': 'Message field is required'
             }), 400
+
+        # Get project context if project_id is provided
+        project_context = None
+        if project_id and project_id in PROJECTS:
+            project = PROJECTS[project_id]
+            project_context = {
+                'project_name': project['name'],
+                'project_description': project['description'],
+                'project_status': project['status']
+            }
 
         # Map agent type to corresponding agent and their display names
         agents = {
@@ -119,6 +304,8 @@ def interact():
         }
 
         print(f"\n[DEBUG] Starting interaction with agent type: {agent_type}")
+        if project_context:
+            print(f"[DEBUG] Project context: {project_context}")
 
         selected_agent, display_name = agents.get(agent_type, (None, None))
         if not selected_agent:
@@ -130,9 +317,10 @@ def interact():
         # Track which agents have been used to prevent duplicates
         used_agents = set()
         
-        # Process initial response
+        # Process initial response with project context
         print(f"[DEBUG] Processing initial response from {display_name}")
-        result = selected_agent.process_input(user_input)
+        context = {'project': project_context} if project_context else None
+        result = selected_agent.process_input(user_input, context)
         
         # Include context summary in response
         response = f"{display_name}: {result['response']}"
@@ -177,22 +365,26 @@ def interact():
 
                 try:
                     # Prepare context with previous responses and memory
-                    context = {
+                    collab_context = {
                         'previous_responses': {
                             agent_type: info['response']
                             for agent_type, info in collaboration_context.items()
                         }
                     }
+                    
+                    # Add project context if available
+                    if project_context:
+                        collab_context['project'] = project_context
 
                     # Add specific requests from parent agent if they exist
                     parent_requests = collaboration_context[parent_type].get('requests', {})
                     if collab_type in parent_requests:
-                        context['requests'] = parent_requests[collab_type]
-                        print(f"[DEBUG] Added specific requests for {collab_type}: {context['requests']}")
+                        collab_context['requests'] = parent_requests[collab_type]
+                        print(f"[DEBUG] Added specific requests for {collab_type}: {collab_context['requests']}")
 
                     # Get collaboration response
                     print(f"[DEBUG] Getting response from {collab_display_name}")
-                    collab_result = collab_agent.process_input(user_input, context)
+                    collab_result = collab_agent.process_input(user_input, collab_context)
                     
                     # Add to used agents to prevent duplicates
                     used_agents.add(collab_type)

@@ -60,7 +60,28 @@ class GitHubIntegration:
             'error_code': 'UNEXPECTED_ERROR'
         }
 
-    def create_repository(self, name: str, description: Optional[str] = None, private: bool = False) -> Dict[str, Union[bool, str]]:
+    def _serialize_repo_info(self, repo) -> Dict[str, str]:
+        """Serialize repository information into a JSON-friendly format."""
+        try:
+            return {
+                'name': str(repo.name),
+                'full_name': str(repo.full_name),
+                'description': str(repo.description) if repo.description else '',
+                'html_url': str(repo.html_url),
+                'clone_url': str(repo.clone_url),
+                'ssh_url': str(repo.ssh_url),
+                'default_branch': str(repo.default_branch),
+                'private': bool(repo.private),
+                'created_at': repo.created_at.isoformat() if repo.created_at else None,
+                'updated_at': repo.updated_at.isoformat() if repo.updated_at else None
+            }
+        except Exception as e:
+            return {
+                'name': '',
+                'error': f'Failed to serialize repository info: {str(e)}'
+            }
+
+    def create_repository(self, name: str, description: Optional[str] = None, private: bool = False) -> Dict[str, Union[bool, str, dict]]:
         """Create a new GitHub repository with enhanced error handling."""
         try:
             # Validate repository name
@@ -80,16 +101,19 @@ class GitHubIntegration:
                 has_downloads=True,
                 auto_init=True
             )
+            
+            repo_info = self._serialize_repo_info(repo)
             return {
                 'success': True,
-                'repo_url': repo.html_url,
-                'clone_url': repo.clone_url,
+                'repo_info': repo_info,
+                'repo_url': str(repo.html_url),
+                'clone_url': str(repo.clone_url),
                 'message': 'Repository created successfully'
             }
         except Exception as e:
             return self._handle_github_error(e)
 
-    def get_repository(self, name: str) -> Dict[str, Union[bool, str]]:
+    def get_repository(self, name: str) -> Dict[str, Union[bool, str, dict]]:
         """Get repository information with enhanced error handling."""
         try:
             if not name or not name.strip():
@@ -100,17 +124,19 @@ class GitHubIntegration:
                 }
 
             repo = self.user.get_repo(name)
+            repo_info = self._serialize_repo_info(repo)
+            
             return {
                 'success': True,
-                'repo': repo,
-                'repo_url': repo.html_url,
-                'clone_url': repo.clone_url,
+                'repo_info': repo_info,
+                'repo_url': str(repo.html_url),
+                'clone_url': str(repo.clone_url),
                 'message': 'Repository found successfully'
             }
         except Exception as e:
             return self._handle_github_error(e)
 
-    def initialize_repository(self, name: str, description: Optional[str] = None) -> Dict[str, Union[bool, str]]:
+    def initialize_repository(self, name: str, description: Optional[str] = None) -> Dict[str, Union[bool, str, dict]]:
         """Initialize or get existing repository with enhanced error handling."""
         if not name or not name.strip():
             return {
@@ -122,12 +148,15 @@ class GitHubIntegration:
         existing_repo = self.get_repository(name)
         if existing_repo['success']:
             return {
-                **existing_repo,
+                'success': True,
+                'repo_info': existing_repo['repo_info'],
+                'repo_url': str(existing_repo['repo_url']),
+                'clone_url': str(existing_repo['clone_url']),
                 'message': 'Using existing repository'
             }
         return self.create_repository(name, description)
 
-    def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Dict[str, Union[bool, str]]:
+    def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Dict[str, Union[bool, str, dict]]:
         """Commit multiple files to the repository."""
         try:
             # Get repository
@@ -135,7 +164,7 @@ class GitHubIntegration:
             if not repo_info['success']:
                 return repo_info
             
-            repo = repo_info['repo']
+            repo = self.user.get_repo(repo_name)
             
             # Get the latest commit
             ref = repo.get_git_ref('heads/main')
@@ -144,6 +173,7 @@ class GitHubIntegration:
 
             # Create tree elements
             element_list = []
+            processed_files = []
             for file_info in files:
                 try:
                     with open(file_info['path'], 'rb') as f:
@@ -157,6 +187,7 @@ class GitHubIntegration:
                             sha=blob.sha
                         )
                         element_list.append(element)
+                        processed_files.append(str(file_info['path']))
                 except Exception as e:
                     print(f"Error processing file {file_info['path']}: {str(e)}")
                     continue
@@ -174,7 +205,8 @@ class GitHubIntegration:
             return {
                 'success': True,
                 'message': f'Successfully committed {len(element_list)} files',
-                'commit_sha': commit.sha
+                'commit_sha': str(commit.sha),
+                'processed_files': processed_files
             }
 
         except Exception as e:
