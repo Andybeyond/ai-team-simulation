@@ -1,8 +1,9 @@
 import os
-from github import Github, GithubException, InputGitTreeElement
+from github import Github, GithubException, InputGitTreeElement, RateLimitExceededException
 from typing import Dict, Union, Optional
 import base64
 from pathlib import Path
+import time
 
 class GitHubIntegration:
     def __init__(self):
@@ -27,9 +28,34 @@ class GitHubIntegration:
         except Exception as e:
             raise ValueError(f"Failed to initialize GitHub integration: {str(e)}")
 
+    def _check_rate_limit(self):
+        """Check and handle GitHub API rate limits."""
+        rate_limit = self.github.get_rate_limit()
+        core_remaining = rate_limit.core.remaining
+        
+        if core_remaining < 10:  # Buffer of 10 requests
+            reset_timestamp = rate_limit.core.reset.timestamp()
+            current_timestamp = time.time()
+            sleep_time = reset_timestamp - current_timestamp + 1
+            
+            if sleep_time > 0:
+                print(f"\nRate limit approaching, waiting {int(sleep_time)} seconds...")
+                time.sleep(sleep_time)
+                return True
+        return False
+
     def _handle_github_error(self, e: Exception) -> Dict[str, Union[bool, str]]:
         """Handle GitHub-related errors with user-friendly messages."""
-        if isinstance(e, GithubException):
+        if isinstance(e, RateLimitExceededException):
+            reset_time = self.github.rate_limiting_resettime
+            wait_time = reset_time - int(time.time())
+            return {
+                'success': False,
+                'error': f'Rate limit exceeded. Reset in {wait_time} seconds.',
+                'error_code': 'RATE_LIMIT',
+                'wait_time': wait_time
+            }
+        elif isinstance(e, GithubException):
             if e.status == 401:
                 return {
                     'success': False,
@@ -60,7 +86,7 @@ class GitHubIntegration:
             'error_code': 'UNEXPECTED_ERROR'
         }
 
-    def _serialize_repo_info(self, repo) -> Dict[str, str]:
+    def _serialize_repo_info(self, repo) -> Dict[str, Union[str, bool, None]]:
         """Serialize repository information into a JSON-friendly format."""
         return {
             'name': str(repo.name),
@@ -78,6 +104,8 @@ class GitHubIntegration:
     def create_repository(self, name: str, description: Optional[str] = None, private: bool = False) -> Dict[str, Union[bool, str, dict]]:
         """Create a new GitHub repository with enhanced error handling."""
         try:
+            self._check_rate_limit()
+            
             # Validate repository name
             if not name or not name.strip():
                 return {
@@ -86,7 +114,8 @@ class GitHubIntegration:
                     'error_code': 'INVALID_NAME'
                 }
 
-            repo = self.user.create_repo(
+            # Create repository with proper method
+            repo = self.github.get_user().create_repo(
                 name=name,
                 description=description or "AI Team Simulation using LangChain-powered agents",
                 private=private,
@@ -110,6 +139,8 @@ class GitHubIntegration:
     def get_repository(self, name: str) -> Dict[str, Union[bool, str, dict]]:
         """Get repository information with enhanced error handling."""
         try:
+            self._check_rate_limit()
+            
             if not name or not name.strip():
                 return {
                     'success': False,
@@ -150,9 +181,11 @@ class GitHubIntegration:
             }
         return self.create_repository(name, description)
 
-    def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Dict[str, Union[bool, str, dict]]:
+    def commit_files(self, repo_name: str, files: list, commit_message: str = "Initial commit") -> Dict[str, Union[bool, str, dict, list]]:
         """Commit multiple files to the repository with improved error handling and progress tracking."""
         try:
+            self._check_rate_limit()
+            
             # Get repository
             repo_info = self.get_repository(repo_name)
             if not repo_info['success']:
@@ -166,7 +199,7 @@ class GitHubIntegration:
                 ref = repo.get_git_ref('heads/main')
                 commit = repo.get_git_commit(ref.object.sha)
                 base_tree = commit.tree
-            except GithubException as e:
+            except GithubException:
                 # If ref doesn't exist, try master branch
                 try:
                     ref = repo.get_git_ref('heads/master')
@@ -198,8 +231,10 @@ class GitHubIntegration:
                         if not content.strip():
                             print(f"Warning: Skipping empty file - {file_path}")
                             continue
-                            
-                        # Create blob with error handling
+                        
+                        # Check rate limit before creating blob
+                        self._check_rate_limit()
+                        
                         try:
                             blob = repo.create_git_blob(base64.b64encode(content).decode(), 'base64')
                             element = InputGitTreeElement(
@@ -228,9 +263,17 @@ class GitHubIntegration:
 
             # Create tree and commit with error handling
             try:
+                # Check rate limit before creating tree
+                self._check_rate_limit()
                 tree = repo.create_git_tree(element_list, base_tree)
+                
+                # Check rate limit before creating commit
+                self._check_rate_limit()
                 parent = [commit]
                 commit = repo.create_git_commit(commit_message, tree, parent)
+                
+                # Check rate limit before updating reference
+                self._check_rate_limit()
                 ref.edit(commit.sha)
             except GithubException as e:
                 return self._handle_github_error(e)
