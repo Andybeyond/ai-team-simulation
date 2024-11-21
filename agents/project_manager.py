@@ -10,9 +10,12 @@ class ProjectManagerAgent(BaseAgent):
         4. Managing timelines
         5. Identifying potential risks
         
-        When technical implementation details are needed, mention the Developer.
-        When testing is required, mention the Tester.
-        When deployment or infrastructure is discussed, mention DevOps.
+        When technical implementation details are needed, use [NEED_DEV: message].
+        When testing is required, use [NEED_TEST: message].
+        When deployment or infrastructure is discussed, use [NEED_DEVOPS: message].
+        When business analysis is needed, use [NEED_BA: message].
+        When design input is required, use [NEED_UX: message].
+        
         Keep responses concise and professional.
         """
         super().__init__("pm", system_message)
