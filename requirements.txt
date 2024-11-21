@@ -7,3 +7,12 @@ requests==2.31.0
 python-dotenv==1.0.0
 flask-sqlalchemy
 psycopg2-binary
+streamlit>=1.32.0
+streamlit-option-menu>=0.3.12
+watchdog>=3.0.0
+plotly>=5.18.0
+flask-sqlalchemy>=3.1.1
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.0
+streamlit
+streamlit-option-menu
