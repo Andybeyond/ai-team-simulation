@@ -7,14 +7,38 @@ document.addEventListener('DOMContentLoaded', function() {
     const newProjectModal = document.getElementById('newProjectModal');
     let currentProject = null;
 
-    // Agent configuration with display names and welcome message routing
+    // Agent configuration with display names, colors, and welcome message routing
     const agentConfig = {
-        'pm': { displayName: 'PM', receiveWelcome: true },
-        'dev': { displayName: 'DEVELOPER', receiveWelcome: true },
-        'tester': { displayName: 'TESTER', receiveWelcome: true },
-        'devops': { displayName: 'DEVOPS', receiveWelcome: true },
-        'ba': { displayName: 'BUSINESS ANALYST', receiveWelcome: true },
-        'uxd': { displayName: 'UX DESIGNER', receiveWelcome: true }
+        'pm': { 
+            displayName: 'PM', 
+            receiveWelcome: true,
+            color: 'var(--agent-pm-color)'
+        },
+        'dev': { 
+            displayName: 'DEVELOPER', 
+            receiveWelcome: true,
+            color: 'var(--agent-dev-color)'
+        },
+        'tester': { 
+            displayName: 'TESTER', 
+            receiveWelcome: true,
+            color: 'var(--agent-tester-color)'
+        },
+        'devops': { 
+            displayName: 'DEVOPS', 
+            receiveWelcome: true,
+            color: 'var(--agent-devops-color)'
+        },
+        'ba': { 
+            displayName: 'BUSINESS ANALYST', 
+            receiveWelcome: true,
+            color: 'var(--agent-ba-color)'
+        },
+        'uxd': { 
+            displayName: 'UX DESIGNER', 
+            receiveWelcome: true,
+            color: 'var(--agent-uxd-color)'
+        }
     };
 
     // Get current active tab's agent
@@ -28,26 +52,60 @@ document.addEventListener('DOMContentLoaded', function() {
         return document.querySelector(`.chat-container[data-agent="${agent}"]`);
     }
 
-    // Format context with improved error handling
+    // Format context with enhanced readability and styling
     function formatContext(context) {
         if (!context) return '';
         
         try {
-            const sections = context.split('---').map(section => section.trim());
+            // Split sections using the new separator
+            const sections = context.split('━━━━━━━━━━').map(section => section.trim()).filter(Boolean);
+            
             return sections.map(section => {
-                const lines = section.split('\n').map(line => {
-                    if (line.startsWith('User asked:')) {
-                        return `<h6 class="context-header">👤 ${line}</h6>`;
-                    } else if (line.startsWith('Agent responded:')) {
-                        return `<h6 class="context-header">🤖 ${line}</h6>`;
+                // Split into message pairs and process
+                const messages = section.split('\n\n').reduce((acc, block) => {
+                    const lineContent = block.trim();
+                    if (!lineContent) return acc;
+                    
+                    // Enhanced message detection with emojis
+                    if (lineContent.startsWith('👤')) {
+                        acc.push({
+                            type: 'user',
+                            content: lineContent.replace('👤', '').trim()
+                        });
+                    } else if (lineContent.startsWith('🤖')) {
+                        acc.push({
+                            type: 'agent',
+                            content: lineContent.replace('🤖', '').trim()
+                        });
                     }
-                    return `<p>${line}</p>`;
-                }).join('');
-                return `<div class="context-section">${lines}</div>`;
-            }).join('<hr class="context-separator">');
+                    return acc;
+                }, []);
+                
+                // Create enhanced HTML structure for messages
+                const messagesHTML = messages.map(msg => `
+                    <div class="context-message ${msg.type}-context">
+                        <div class="message-content">
+                            <div class="message-icon">${msg.type === 'user' ? '👤' : '🤖'}</div>
+                            <div class="message-text">
+                                ${msg.content.split('\n').map(line => 
+                                    `<p class="mb-1">${line.trim()}</p>`
+                                ).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                
+                return messagesHTML ? `
+                    <div class="context-section">
+                        ${messagesHTML}
+                    </div>
+                ` : '';
+            }).filter(Boolean).join('<div class="context-separator"></div>') || 
+            '<div class="context-section"><p class="text-muted">No previous context available</p></div>';
+            
         } catch (error) {
             console.error('Error formatting context:', error);
-            return `<div class="context-section"><p>Error displaying context: ${error.message}</p></div>`;
+            return `<div class="context-section"><p class="text-danger">Error displaying context: ${error.message}</p></div>`;
         }
     }
 
@@ -110,10 +168,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 responses.forEach(response => {
                     if (!response.trim()) return;
 
-                    const agentMatch = response.match(/^((?:PM|DEVELOPER|TESTER|DEVOPS|BUSINESS ANALYST|UX DESIGNER))(?:\s+\((?:with context from:)?([\s\S]*?)\))?\s*([\s\S]*)$/);
+                    const agentMatch = response.match(/^((?:PM|DEVELOPER|TESTER|DEVOPS|BUSINESS ANALYST|UX DESIGNER))(?:\s*(?:->|→)\s*Task for \1)?\s*(?:\((?:with context from:)?([\s\S]*?)\))?\s*(?:\[([\s\S]*?)\]|(?:\s*([\s\S]*)))?$/);
+
+                    // Handle basic message format
+                    const message = response.trim();
                     
                     if (agentMatch) {
-                        const [_, agentName, context, message] = agentMatch;
+                        const [_, agentName, context, bracketMessage, plainMessage] = agentMatch;
+                        const message = bracketMessage || plainMessage;
                         const targetAgent = Object.entries(agentConfig).find(([_, config]) => 
                             config.displayName === agentName
                         )?.[0] || agent;
