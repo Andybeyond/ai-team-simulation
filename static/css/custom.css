@@ -36,7 +36,7 @@
     color: var(--bs-light);
 }
 
-/* Context styles with improved display */
+/* Context styles with improved display and organization */
 .context-info {
     font-size: 0.95rem;
     padding: 1.25rem;
@@ -47,10 +47,11 @@
     color: var(--bs-light);
     display: none;
     white-space: pre-wrap;
-    max-height: 400px;
+    max-height: 300px;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: var(--bs-secondary) var(--bs-dark);
+    transition: max-height 0.3s ease;
 }
 
 .context-info.show {
@@ -453,4 +454,274 @@
 
 .node rect.label-background {
     transition: filter 0.2s ease, stroke-width 0.2s ease;
+/* Root theme variables */
+:root[data-bs-theme=dark] {
+    --bs-body-bg: #121212;
+    --bs-dark: #1a1a1a;
+
+    /* Agent color variables */
+    --agent-pm-color: #d8b4fe;
+    --agent-dev-color: var(--bs-success);
+    --agent-tester-color: var(--bs-warning);
+    --agent-devops-color: var(--bs-danger);
+    --agent-ba-color: var(--bs-purple);
+    --agent-uxd-color: var(--bs-cyan);
+
+    /* Common style variables */
+    --agent-bg-opacity: 0.12;  /* Reduced opacity for better balance */
+    --agent-border-width: 3px; /* Slightly reduced for better aesthetics */
+    --agent-transition: all 0.2s ease-in-out;
+    --agent-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    --agent-border-radius: 4px;
+    --agent-padding: 0.75rem 1.25rem;
+    --agent-hover-bg: rgba(255, 255, 255, 0.05);
+}
+
+/* Tab Container Styling */
+.tab-content {
+    background-color: color-mix(in srgb, var(--bs-success) 20%, var(--bs-dark)) !important;  /* Increased green percentage from 10% to 20% */
+    padding: 1rem;
+    border-radius: 0 0 8px 8px;
+    border: 1px solid var(--bs-border-color);
+    margin-top: -1px;  /* To overlap with tab border */
+}
+
+/* Ensure message contrast against new background */
+.agent-message {
+    background: color-mix(in srgb, var(--bs-dark) 80%, black);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--bs-border-color);
+}
+
+/* Base tab styles */
+.nav-tabs .nav-link[data-agent-type] {
+    color: var(--bs-gray-400);
+    border: none;
+    border-bottom: var(--agent-border-width) solid transparent;
+    transition: var(--agent-transition);
+    position: relative;
+    border-radius: var(--agent-border-radius) var(--agent-border-radius) 0 0;
+    margin-right: 4px;
+    padding: var(--agent-padding);
+    font-weight: 500;
+}
+
+.nav-tabs .nav-link[data-agent-type]:hover {
+    background-color: var(--agent-hover-bg);
+}
+
+.nav-tabs .nav-link[data-agent-type].active {
+    font-weight: 600;
+    border-bottom-width: var(--agent-border-width);
+    border-bottom-style: solid;
+}
+
+/* PM Tab */
+.nav-tabs .nav-link[data-agent-type="pm"]:hover {
+    color: var(--agent-pm-color) !important;
+    background-color: color-mix(in srgb, var(--agent-pm-color) 8%, transparent) !important;
+}
+
+.nav-tabs .nav-link[data-agent-type="pm"].active {
+    color: var(--agent-pm-color) !important;
+    border-bottom-color: var(--agent-pm-color) !important;
+    background-color: color-mix(in srgb, var(--agent-pm-color) 12%, transparent) !important;
+}
+
+/* Developer Tab */
+.nav-tabs .nav-link[data-agent-type="dev"]:hover {
+    color: var(--agent-dev-color) !important;
+}
+
+.nav-tabs .nav-link[data-agent-type="dev"].active {
+    color: var(--agent-dev-color) !important;
+    border-bottom-color: var(--agent-dev-color) !important;
+    background-color: color-mix(in srgb, var(--agent-dev-color) 12%, transparent) !important;
+}
+
+/* Tester Tab */
+.nav-tabs .nav-link[data-agent-type="tester"]:hover {
+    color: var(--agent-tester-color) !important;
+}
+
+.nav-tabs .nav-link[data-agent-type="tester"].active {
+    color: var(--agent-tester-color) !important;
+    border-bottom-color: var(--agent-tester-color) !important;
+    background-color: color-mix(in srgb, var(--agent-tester-color) 12%, transparent) !important;
+}
+
+/* DevOps Tab */
+.nav-tabs .nav-link[data-agent-type="devops"]:hover {
+    color: var(--agent-devops-color) !important;
+}
+
+.nav-tabs .nav-link[data-agent-type="devops"].active {
+    color: var(--agent-devops-color) !important;
+    border-bottom-color: var(--agent-devops-color) !important;
+    background-color: color-mix(in srgb, var(--agent-devops-color) 12%, transparent) !important;
+}
+
+/* Business Analyst Tab */
+.nav-tabs .nav-link[data-agent-type="ba"]:hover {
+    color: var(--agent-ba-color) !important;
+}
+
+.nav-tabs .nav-link[data-agent-type="ba"].active {
+    color: var(--agent-ba-color) !important;
+    border-bottom-color: var(--agent-ba-color) !important;
+    background-color: color-mix(in srgb, var(--agent-ba-color) 12%, transparent) !important;
+}
+
+/* UX Designer Tab */
+.nav-tabs .nav-link[data-agent-type="uxd"]:hover {
+    color: var(--agent-uxd-color) !important;
+}
+
+.nav-tabs .nav-link[data-agent-type="uxd"].active {
+    color: var(--agent-uxd-color) !important;
+    border-bottom-color: var(--agent-uxd-color) !important;
+    background-color: color-mix(in srgb, var(--agent-uxd-color) 12%, transparent) !important;
+}
+
+/* Enhanced Message Container Styles */
+.agent-message {
+    margin-bottom: 1.5rem;
+    border-radius: 8px;
+    background: var(--bs-dark);
+    box-shadow: var(--agent-shadow);
+}
+
+.agent-response {
+    padding: 1.25rem;
+    border-radius: 8px;
+    position: relative;
+}
+
+/* Common Message Header Styles */
+.agent-label {
+    padding: var(--agent-padding);
+    border-radius: var(--agent-border-radius);
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: inline-block;
+    position: relative;
+    box-shadow: var(--agent-shadow);
+}
+
+/* PM Response */
+.agent-response[data-agent="pm"] .agent-label {
+    color: var(--agent-pm-color) !important;
+    background-color: color-mix(in srgb, var(--agent-pm-color) var(--agent-bg-opacity), transparent) !important;
+    border-left: var(--agent-border-width) solid var(--agent-pm-color) !important;
+}
+
+/* Developer Response */
+.agent-response[data-agent="dev"] .agent-label {
+    color: var(--agent-dev-color);
+    background-color: color-mix(in srgb, var(--agent-dev-color) var(--agent-bg-opacity), transparent);
+    border-left: var(--agent-border-width) solid var(--agent-dev-color);
+}
+
+/* Tester Response */
+.agent-response[data-agent="tester"] .agent-label {
+    color: var(--agent-tester-color);
+    background-color: color-mix(in srgb, var(--agent-tester-color) var(--agent-bg-opacity), transparent);
+    border-left: var(--agent-border-width) solid var(--agent-tester-color);
+}
+
+/* DevOps Response */
+.agent-response[data-agent="devops"] .agent-label {
+    color: var(--agent-devops-color);
+    background-color: color-mix(in srgb, var(--agent-devops-color) var(--agent-bg-opacity), transparent);
+    border-left: var(--agent-border-width) solid var(--agent-devops-color);
+}
+
+/* Business Analyst Response */
+.agent-response[data-agent="ba"] .agent-label {
+    color: var(--agent-ba-color);
+    background-color: color-mix(in srgb, var(--agent-ba-color) var(--agent-bg-opacity), transparent);
+    border-left: var(--agent-border-width) solid var(--agent-ba-color);
+}
+
+/* UX Designer Response */
+.agent-response[data-agent="uxd"] .agent-label {
+    color: var(--agent-uxd-color);
+    background-color: color-mix(in srgb, var(--agent-uxd-color) var(--agent-bg-opacity), transparent);
+    border-left: var(--agent-border-width) solid var(--agent-uxd-color);
+}
+
+/* Enhanced Agent Label Styles with improved contrast */
+.agent-label {
+    padding: var(--agent-padding);
+    border-radius: var(--agent-border-radius);
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: inline-block;
+    position: relative;
+    box-shadow: var(--agent-shadow);
+    border-width: var(--agent-border-width);
+    transition: var(--agent-transition);
+}
+
+/* Enhanced Context Message Styles */
+.context-message {
+    margin-bottom: 1.25rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    background-color: var(--bs-dark);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.context-message.user-context {
+    border-left: 4px solid var(--bs-info);
+    margin-right: 1.5rem;
+}
+
+.context-message.agent-context {
+    border-left: 4px solid var(--bs-primary);
+    margin-left: 1.5rem;
+}
+
+.message-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.message-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.message-text {
+    flex-grow: 1;
+    color: var(--bs-gray-200);
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.message-text p {
+    margin-bottom: 0.5rem;
+}
+
+.message-text p:last-child {
+    margin-bottom: 0;
+}
+
+.context-separator {
+    height: 2px;
+    background: var(--bs-border-color);
+    margin: 1.5rem 0;
+    opacity: 0.2;
+    border-radius: 1px;
+}
+
+.context-section {
+    margin-bottom: 1.5rem;
+}
+
+.context-section:last-child {
+    margin-bottom: 0;
+}
 }
