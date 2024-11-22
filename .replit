@@ -1,4 +1,4 @@
-modules = ["python-3.11"]
+modules = ["python-3.11", "nodejs-20"]
 
 [nix]
 channel = "stable-24_05"
@@ -27,6 +27,10 @@ args = "GitHub Push"
 task = "workflow.run"
 args = "Streamlit App"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Next.js Dev"
+
 [[workflows.workflow]]
 name = "AI Team Simulation"
 author = "agent"
@@ -54,7 +58,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 app.py"
+args = "python app.py"
 waitForPort = 5000
 
 [[workflows.workflow]]
@@ -86,8 +90,27 @@ task = "shell.exec"
 args = "streamlit run streamlit_app.py --server.port=8502 --server.address=0.0.0.0 --server.headless=true"
 waitForPort = 8502
 
+[[workflows.workflow]]
+name = "Next.js Dev"
+author = "agent"
+
+[workflows.workflow.metadata]
+agentRequireRestartOnSave = false
+
+[[workflows.workflow.tasks]]
+task = "packager.installForAll"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npx next dev -p 3001"
+waitForPort = 3001
+
 [deployment]
 run = ["sh", "-c", "python app.py"]
+
+[[ports]]
+localPort = 3001
+externalPort = 3002
 
 [[ports]]
 localPort = 5000
