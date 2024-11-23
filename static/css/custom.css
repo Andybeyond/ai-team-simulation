@@ -1,3 +1,8 @@
+/* Theme transition styles */
+.theme-transitioning * {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease !important;
+}
+
 /* Theme toggle button styles */
 .theme-toggle {
     position: relative;
@@ -9,6 +14,27 @@
     align-items: center;
     justify-content: center;
     transition: all 0.3s ease;
+    border: 1px solid var(--bs-border-color);
+    background-color: transparent;
+}
+
+/* Light theme specific styles */
+[data-bs-theme="light"] {
+    --bs-body-bg: #ffffff;
+    --bs-body-color: #212529;
+    --bs-dark: #f8f9fa;
+    --bs-border-color: #dee2e6;
+}
+
+[data-bs-theme="light"] .theme-toggle {
+    color: #212529;
+    border-color: #dee2e6;
+}
+
+[data-bs-theme="light"] .nav-tabs .nav-link.active {
+    background-color: #ffffff;
+    color: var(--bs-primary);
+    border-color: #dee2e6;
 }
 
 .theme-toggle i {
@@ -494,6 +520,12 @@
     transition: filter 0.2s ease, stroke-width 0.2s ease;
 /* Root theme variables */
 :root {
+    /* Common variables */
+    --agent-transition: all 0.2s ease-in-out;
+    --agent-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    --agent-border-radius: 4px;
+    --agent-padding: 0.75rem 1.25rem;
+    
     /* Light theme variables */
     --agent-pm-color: #9333ea;
     --agent-dev-color: var(--bs-success);
@@ -501,11 +533,15 @@
     --agent-devops-color: var(--bs-danger);
     --agent-ba-color: var(--bs-purple);
     --agent-uxd-color: var(--bs-cyan);
+    --agent-bg-opacity: 0.08;
+    --agent-hover-bg: rgba(0, 0, 0, 0.05);
 }
 
 :root[data-bs-theme=dark] {
     --bs-body-bg: #121212;
     --bs-dark: #1a1a1a;
+    --agent-bg-opacity: 0.12;
+    --agent-hover-bg: rgba(255, 255, 255, 0.05);
 
     /* Dark theme variables */
     --agent-pm-color: #d8b4fe;
