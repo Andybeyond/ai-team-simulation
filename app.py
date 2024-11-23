@@ -70,6 +70,7 @@ def create_project_structure(project_id: str) -> None:
 
 @app.route('/')
 def index() -> Union[str, Tuple[Response, int]]:
+    """Main page with project selection and agent chat."""
     try:
         projects = {str(p.id): {
             'name': p.name,
@@ -82,6 +83,18 @@ def index() -> Union[str, Tuple[Response, int]]:
         return jsonify({
             'success': False,
             'error': 'Failed to load index page',
+            'details': str(e)
+        }), 500
+
+@app.route('/relationships')
+def relationships() -> Union[str, Tuple[Response, int]]:
+    """Show the agent relationships visualization page."""
+    try:
+        return render_template('agent_relationships.html')
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'Failed to load relationships page',
             'details': str(e)
         }), 500
 
