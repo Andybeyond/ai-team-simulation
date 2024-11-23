@@ -102,11 +102,15 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npx next dev -p 3001"
-waitForPort = 3001
+args = "npx next dev -p 80 -H 0.0.0.0"
+waitForPort = 80
 
 [deployment]
 run = ["sh", "-c", "python app.py"]
+
+[[ports]]
+localPort = 80
+externalPort = 3003
 
 [[ports]]
 localPort = 3001
