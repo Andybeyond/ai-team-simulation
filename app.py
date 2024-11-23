@@ -1,4 +1,5 @@
 import os
+from config import get_config
 import shutil
 from flask import Flask, render_template, request, jsonify, session, Response
 from flask_cors import CORS
@@ -16,6 +17,7 @@ from typing import Union, Tuple, Optional
 from datetime import datetime
 
 app = Flask(__name__)
+app.config.from_object(get_config())
 CORS(app)  # Enable CORS for all routes
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "a secret key"
 
