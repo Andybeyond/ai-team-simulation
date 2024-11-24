@@ -443,5 +443,35 @@ def interact() -> Union[Response, Tuple[Response, int]]:
             'details': str(e)
         }), 500
 
+def get_available_port(start_port, max_attempts=10):
+    """Try to find an available port starting from start_port."""
+    import socket
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind(('0.0.0.0', port))
+            sock.close()
+            return port
+        except OSError:
+            continue
+    return None
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    config = get_config()
+    initial_port = config.PORT
+    
+    try:
+        app.run(host=config.HOST, port=initial_port, debug=config.DEBUG)
+    except OSError as e:
+        if 'Address already in use' in str(e):
+            print(f"\nPort {initial_port} is in use. Trying to find an available port...")
+            available_port = get_available_port(initial_port + 1)
+            if available_port:
+                print(f"Found available port: {available_port}")
+                app.run(host=config.HOST, port=available_port, debug=config.DEBUG)
+            else:
+                print(f"Could not find an available port after trying {initial_port} through {initial_port + 9}")
+                sys.exit(1)
+        else:
+            print(f"Error starting server: {e}")
+            sys.exit(1)
