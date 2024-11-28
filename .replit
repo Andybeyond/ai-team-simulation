@@ -13,7 +13,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "AI Team Simulation"
+args = "Flask Server"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
@@ -32,7 +32,7 @@ task = "workflow.run"
 args = "Local Setup"
 
 [[workflows.workflow]]
-name = "AI Team Simulation"
+name = "Flask Server"
 author = "agent"
 
 [workflows.workflow.metadata]
@@ -43,7 +43,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python main.py"
+args = "python app.py"
 waitForPort = 5000
 
 [[workflows.workflow]]
@@ -87,7 +87,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 app.py"
+args = "python app.py"
 waitForPort = 5000
 
 [[workflows.workflow]]
@@ -116,8 +116,16 @@ localPort = 3001
 externalPort = 3002
 
 [[ports]]
+localPort = 4200
+externalPort = 5000
+
+[[ports]]
 localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 5001
+externalPort = 4200
 
 [[ports]]
 localPort = 8501
