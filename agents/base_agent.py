@@ -5,11 +5,57 @@ import os
 import re
 
 class BaseAgent:
-    def __init__(self, agent_type, system_message_content):
+    # Supported OpenAI models with capabilities and use cases
+    SUPPORTED_MODELS = {
+        "gpt-4o": {
+            "name": "GPT-4o (Flagship)",
+            "description": "Most capable model for complex tasks, 2x faster, 50% cheaper than GPT-4 Turbo",
+            "context_length": 128000,
+            "max_output": 16384,
+            "use_case": "Complex multi-step reasoning, project management, technical analysis"
+        },
+        "gpt-4o-mini": {
+            "name": "GPT-4o Mini",
+            "description": "Fast and efficient model for lightweight tasks",
+            "context_length": 128000,
+            "max_output": 16384,
+            "use_case": "Quick analysis, rapid prototyping, efficient processing"
+        },
+        "o1-preview": {
+            "name": "o1 Preview",
+            "description": "Advanced reasoning model with internal chain of thought",
+            "context_length": 128000,
+            "max_output": 32768,
+            "use_case": "Complex problem solving, deep analysis, research tasks"
+        },
+        "o1-mini": {
+            "name": "o1 Mini",
+            "description": "Specialized for code, math, and science tasks",
+            "context_length": 128000,
+            "max_output": 65536,
+            "use_case": "Technical implementation, mathematical analysis, scientific research"
+        }
+    }
+
+    def __init__(self, agent_type, system_message_content, model="gpt-4o"):
         self.agent_type = agent_type
+        
+        # Validate model selection
+        if model not in self.SUPPORTED_MODELS:
+            raise ValueError(f"Unsupported model. Please choose from: {', '.join(self.SUPPORTED_MODELS.keys())}")
+            
+        self.model = model
+        model_config = self.SUPPORTED_MODELS[model]
+        
+        # Configure model with optimal settings based on role
         self.llm = ChatOpenAI(
-            model="gpt-4",
-            temperature=0.7
+            model=self.model,
+            temperature=0.7 if agent_type in ['pm', 'ba', 'uxd'] else 0.2,  # Lower temperature for technical roles
+            max_tokens=model_config['max_output'],
+            model_kwargs={
+                'context_length': model_config['context_length'],
+                'response_format': {"type": "text"}
+            }
         )
         self.memory = ConversationBufferMemory(
             memory_key="chat_history",
@@ -157,14 +203,13 @@ class BaseAgent:
         return needed_agents, collaboration_requests
 
     def _get_context_summary(self) -> str:
-        """Get concise conversation history with improved formatting and deduplication"""
+        """Store conversation history for memory but don't display in UI"""
         try:
             history = self.memory.chat_memory.messages
             if not history:
                 return None
             
-            # Enhanced conversation tracking with improved deduplication
-            conversations = []
+            # Store context but don't format for display
             message_pairs = {}
             current_user_msg = None
             
@@ -179,10 +224,8 @@ class BaseAgent:
                 is_user = isinstance(msg, HumanMessage)
                 
                 if is_user:
-                    # Start new conversation pair
                     current_user_msg = msg_content
                 elif current_user_msg is not None:
-                    # Complete the conversation pair with content hash for deduplication
                     msg_hash = hash(f"{current_user_msg}:{msg_content}")
                     if msg_hash not in message_pairs:
                         message_pairs[msg_hash] = {
@@ -191,29 +234,9 @@ class BaseAgent:
                             'timestamp': len(message_pairs)
                         }
                     current_user_msg = None
-            
-            # Get most recent conversation pairs
-            sorted_pairs = sorted(
-                message_pairs.values(),
-                key=lambda x: x['timestamp'],
-                reverse=True
-            )[:2]  # Keep only the 2 most recent pairs
-            
-            # Format conversations with improved readability
-            for pair in sorted_pairs:
-                conversation = [
-                    f"👤 {pair['user']}",  # User message with emoji
-                    f"🤖 {pair['agent']}"   # Agent message with emoji
-                ]
-                conversations.append("\n\n".join(conversation))  # Add extra spacing between messages
-            
-            # Join conversations with clear visual separation
-            if conversations:
-                return "\n\n━━━━━━━━━━\n\n".join(reversed(conversations))
+                    
+            # Return None to hide context from UI while keeping it in memory
             return None
             
         except Exception as e:
-            return f"Error retrieving context: {str(e)}"
-            
-        except Exception as e:
-            return f"Error retrieving context: {str(e)}"
+            return None
