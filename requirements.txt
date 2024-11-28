@@ -17,3 +17,5 @@ sqlalchemy>=2.0.0
 streamlit
 streamlit-option-menu
 tomli
+langchain-openai>=0.0.2
+openai>=1.0.0
