@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const newProjectForm = document.getElementById('new-project-form');
     const newProjectModal = document.getElementById('newProjectModal');
     let currentProject = null;
+    let messageCache = new Map();
+    let isLoadingMessages = false;
+    let hasMoreMessages = true;
 
     // Agent configuration with display names, colors, and welcome message routing
     const agentConfig = {
@@ -43,14 +46,37 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Get current active tab's agent
     function getCurrentAgent() {
-        const activeTab = document.querySelector('.nav-link.active');
-        return activeTab.id.replace('-tab', '');
+        const activeTab = document.querySelector('.mui-tab.active');
+        return activeTab.getAttribute('data-agent-type');
     }
 
     // Get chat container for specific agent
     function getChatContainer(agent) {
         return document.querySelector(`.chat-container[data-agent="${agent}"]`);
     }
+
+    // Handle tab switching
+    document.querySelectorAll('.mui-tab').forEach(tab => {
+        tab.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            // Remove active class from all tabs and hide all panes
+            document.querySelectorAll('.mui-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-pane').forEach(p => {
+                p.classList.remove('show', 'active');
+            });
+            
+            // Add active class to clicked tab
+            this.classList.add('active');
+            
+            // Show corresponding pane
+            const targetId = this.getAttribute('aria-controls');
+            const targetPane = document.getElementById(targetId);
+            if (targetPane) {
+                targetPane.classList.add('show', 'active');
+            }
+        });
+    });
 
     // Format context with enhanced readability and styling
     function formatContext(context) {
@@ -109,45 +135,47 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Create message element with improved structure
+    // Create message element with ChatGPT-like structure
     function createMessageElement(content, isUser = false, agent = null) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${isUser ? 'user-message' : 'agent-message'}`;
 
-        if (isUser) {
-            const textContent = document.createElement('div');
-            textContent.className = 'response-text';
-            textContent.innerHTML = content.split('\n').map(line => `<p>${line}</p>`).join('');
-            messageDiv.appendChild(textContent);
-        } else {
-            const agentResponse = document.createElement('div');
-            agentResponse.className = 'agent-response';
-            if (agent) {
-                agentResponse.setAttribute('data-agent', agent);
-            }
-            
-            const agentLabel = document.createElement('div');
-            agentLabel.className = 'agent-label';
-            const displayName = agent ? agentConfig[agent]?.displayName || agent.toUpperCase() : 'AGENT';
-            agentLabel.setAttribute('data-agent', displayName);
-            
-            const labelContent = document.createElement('span');
-            labelContent.textContent = displayName;
-            agentLabel.appendChild(labelContent);
-            
-            const textContent = document.createElement('div');
-            textContent.className = 'response-text';
-            textContent.innerHTML = content.split('\n').map(line => `<p>${line}</p>`).join('');
-            
-            agentResponse.appendChild(agentLabel);
-            agentResponse.appendChild(textContent);
-            messageDiv.appendChild(agentResponse);
+        const messageContent = document.createElement('div');
+        messageContent.className = 'message-content';
+
+        // Create message icon
+        const messageIcon = document.createElement('div');
+        messageIcon.className = 'message-icon';
+        messageIcon.innerHTML = isUser ? '<i class="material-icons">person</i>' : '<i class="material-icons">smart_toy</i>';
+
+        // Create message text container
+        const textContainer = document.createElement('div');
+        textContainer.className = 'message-text';
+
+        // Add role label for agents
+        if (!isUser) {
+            const roleLabel = document.createElement('div');
+            roleLabel.className = 'message-role';
+            roleLabel.textContent = agent ? agentConfig[agent]?.displayName || agent.toUpperCase() : 'AGENT';
+            textContainer.appendChild(roleLabel);
         }
+
+        // Add message content
+        const messageText = document.createElement('div');
+        messageText.innerHTML = content.split('\n').map(line => `<p>${line}</p>`).join('');
+        textContainer.appendChild(messageText);
+
+        messageContent.appendChild(messageIcon);
+        messageContent.appendChild(textContainer);
+        messageDiv.appendChild(messageContent);
 
         return messageDiv;
     }
 
     // Add message to chat with improved error handling
+    // Keep track of last messages to prevent duplicates
+    const lastMessages = new Map();
+    
     function addMessage(content, isUser = false, agent = null) {
         try {
             if (isUser) {
@@ -158,98 +186,43 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.error(`Chat container not found for agent: ${targetAgent}`);
                     return;
                 }
+
+                // Check for duplicate user messages
+                const lastUserMessage = lastMessages.get(`user-${targetAgent}`);
+                if (lastUserMessage === content) {
+                    console.log('Duplicate user message prevented');
+                    return;
+                }
                 
                 const messageDiv = createMessageElement(content, true);
                 chatContainer.appendChild(messageDiv);
                 chatContainer.scrollTop = chatContainer.scrollHeight;
-            } else {
-                const responses = content.includes('\n\n') ? content.split('\n\n') : [content];
                 
-                responses.forEach(response => {
-                    if (!response.trim()) return;
+                // Store this message as the last user message for this agent
+                lastMessages.set(`user-${targetAgent}`, content);
+            } else {
+                const targetAgent = agent || getCurrentAgent();
+                const chatContainer = getChatContainer(targetAgent);
+                
+                if (!chatContainer) {
+                    console.error(`Chat container not found for agent: ${targetAgent}`);
+                    return;
+                }
 
-                    const agentMatch = response.match(/^((?:PM|DEVELOPER|TESTER|DEVOPS|BUSINESS ANALYST|UX DESIGNER))(?:\s*(?:->|→)\s*Task for \1)?\s*(?:\((?:with context from:)?([\s\S]*?)\))?\s*(?:\[([\s\S]*?)\]|(?:\s*([\s\S]*)))?$/);
+                // Check for duplicate agent messages
+                const lastAgentMessage = lastMessages.get(`agent-${targetAgent}`);
+                if (lastAgentMessage === content) {
+                    console.log('Duplicate agent message prevented');
+                    return;
+                }
 
-                    // Handle basic message format
-                    const message = response.trim();
-                    
-                    if (agentMatch) {
-                        const [_, agentName, context, bracketMessage, plainMessage] = agentMatch;
-                        const message = bracketMessage || plainMessage;
-                        const targetAgent = Object.entries(agentConfig).find(([_, config]) => 
-                            config.displayName === agentName
-                        )?.[0] || agent;
-
-                        if (!targetAgent) {
-                            console.error(`Invalid agent name: ${agentName}`);
-                            return;
-                        }
-
-                        const chatContainer = getChatContainer(targetAgent);
-                        if (!chatContainer) {
-                            console.error(`Chat container not found for agent: ${targetAgent}`);
-                            return;
-                        }
-
-                        const messageDiv = document.createElement('div');
-                        messageDiv.className = 'message agent-message';
-                        const agentResponse = document.createElement('div');
-                        agentResponse.className = 'agent-response';
-                        agentResponse.setAttribute('data-agent', targetAgent);
-
-                        // Create agent label with context
-                        const agentLabel = document.createElement('div');
-                        agentLabel.className = 'agent-label';
-                        agentLabel.setAttribute('data-agent', agentName);
-                        
-                        const labelContent = document.createElement('span');
-                        labelContent.textContent = agentName;
-                        agentLabel.appendChild(labelContent);
-
-                        if (context) {
-                            const contextButton = document.createElement('button');
-                            contextButton.className = 'context-toggle';
-                            contextButton.textContent = 'Show Context';
-                            contextButton.onclick = function() {
-                                const contextInfo = this.parentElement.nextElementSibling;
-                                const isShowing = contextInfo.classList.toggle('show');
-                                this.textContent = isShowing ? 'Hide Context' : 'Show Context';
-                            };
-                            agentLabel.appendChild(contextButton);
-
-                            const contextInfo = document.createElement('div');
-                            contextInfo.className = 'context-info';
-                            contextInfo.innerHTML = formatContext(context);
-                            agentResponse.appendChild(contextInfo);
-                        }
-
-                        agentResponse.appendChild(agentLabel);
-
-                        if (message) {
-                            const responseText = document.createElement('div');
-                            responseText.className = 'response-text';
-                            responseText.innerHTML = message.split('\n').map(line => `<p>${line}</p>`).join('');
-                            agentResponse.appendChild(responseText);
-                        }
-
-                        messageDiv.appendChild(agentResponse);
-                        chatContainer.appendChild(messageDiv);
-                        chatContainer.scrollTop = chatContainer.scrollHeight;
-                    } else {
-                        // Handle plain messages
-                        const targetAgent = agent || getCurrentAgent();
-                        const chatContainer = getChatContainer(targetAgent);
-                        
-                        if (!chatContainer) {
-                            console.error(`Chat container not found for agent: ${targetAgent}`);
-                            return;
-                        }
-
-                        const messageDiv = createMessageElement(response, false, targetAgent);
-                        chatContainer.appendChild(messageDiv);
-                        chatContainer.scrollTop = chatContainer.scrollHeight;
-                    }
-                });
+                // Create message element with consistent styling for all agent messages
+                const messageDiv = createMessageElement(content.trim(), false, targetAgent);
+                chatContainer.appendChild(messageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                // Store this message as the last agent message
+                lastMessages.set(`agent-${targetAgent}`, content);
             }
         } catch (error) {
             console.error('Error adding message:', error);
@@ -334,13 +307,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (config.receiveWelcome) {
                         const chatContainer = getChatContainer(agentId);
                         if (chatContainer) {
-                            addMessage(data.response, false, agentId);
+                            // Use createMessageElement for consistent styling
+                            const messageDiv = createMessageElement(data.response, false, agentId);
+                            chatContainer.appendChild(messageDiv);
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
                         }
                     }
                 });
             } else {
                 console.error('Failed to send welcome message:', data.error);
-                addMessage(`Error: ${data.error}`, false, 'pm');
+                const errorMessageDiv = createMessageElement(`Error: ${data.error}`, false, 'pm');
+                getChatContainer('pm').appendChild(errorMessageDiv);
             }
         } catch (error) {
             console.error('Error sending welcome message:', error);
