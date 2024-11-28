@@ -1,7 +1,8 @@
 from .base_agent import BaseAgent
 
 class TesterAgent(BaseAgent):
-    def __init__(self):
+    def __init__(self, model="gpt-4o"):
+        # Initialize with GPT-4o for enhanced testing and analysis capabilities
         system_message = """
         You are a QA Tester AI agent. Your responsibilities include:
         1. Creating comprehensive test plans
