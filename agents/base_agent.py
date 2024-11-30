@@ -1,25 +1,36 @@
-from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage, AIMessage
+from langchain_community.chat_models import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
-import os
+from langchain.schema import (
+    HumanMessage,
+    SystemMessage,
+    AIMessage
+)
 import re
+import logging
+import os
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class BaseAgent:
     # Supported OpenAI models with capabilities and use cases
     SUPPORTED_MODELS = {
-        "gpt-4o": {
-            "name": "GPT-4o (Flagship)",
-            "description": "Most capable model for complex tasks, 2x faster, 50% cheaper than GPT-4 Turbo",
-            "context_length": 128000,
-            "max_output": 16384,
-            "use_case": "Complex multi-step reasoning, project management, technical analysis"
+        "gpt-4": {
+            "name": "GPT-4",
+            "description": "Most capable model for complex tasks",
+            "context_length": 8192,
+            "max_tokens": 4096,
+            "temperature": 0.7,
+            "use_case": "Complex reasoning and analysis"
         },
-        "gpt-4o-mini": {
-            "name": "GPT-4o Mini",
-            "description": "Fast and efficient model for lightweight tasks",
-            "context_length": 128000,
-            "max_output": 16384,
-            "use_case": "Quick analysis, rapid prototyping, efficient processing"
+        "gpt-3.5-turbo": {
+            "name": "GPT-3.5 Turbo",
+            "description": "Fast and efficient for standard tasks",
+            "context_length": 4096,
+            "max_tokens": 2048,
+            "temperature": 0.7,
+            "use_case": "General purpose interactions"
         },
         "o1-preview": {
             "name": "o1 Preview",
@@ -37,55 +48,124 @@ class BaseAgent:
         }
     }
 
-    def __init__(self, agent_type, system_message_content, model="gpt-4o"):
-        self.agent_type = agent_type
-        
-        # Validate model selection
-        if model not in self.SUPPORTED_MODELS:
-            raise ValueError(f"Unsupported model. Please choose from: {', '.join(self.SUPPORTED_MODELS.keys())}")
+    def __init__(self, agent_type: str, system_message: str, model="gpt-4"):
+        """Initialize the agent with enhanced error handling and logging."""
+        if not agent_type or not isinstance(agent_type, str):
+            raise ValueError("Agent type must be a non-empty string")
             
-        self.model = model
-        model_config = self.SUPPORTED_MODELS[model]
-        
-        # Configure model with optimal settings based on role
-        self.llm = ChatOpenAI(
-            model=self.model,
-            temperature=0.7 if agent_type in ['pm', 'ba', 'uxd'] else 0.2,  # Lower temperature for technical roles
-            max_tokens=model_config['max_output'],
-            model_kwargs={
-                'context_length': model_config['context_length'],
-                'response_format': {"type": "text"}
-            }
-        )
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True,
-            human_prefix="User",
-            ai_prefix=f"AI_{agent_type.upper()}"
-        )
-        self.system_message = SystemMessage(content=system_message_content)
-        
-    def process_input(self, user_input: str, context: dict = None) -> dict:
+        if not system_message or not isinstance(system_message, str):
+            raise ValueError("System message must be a non-empty string")
+            
         try:
-            # Get complete chat history without truncation
+            self.agent_type = agent_type
+            self.system_message = SystemMessage(content=system_message)
+            
+            # Configure model with optimal settings based on role
+            try:
+                if not os.environ.get('OPENAI_API_KEY'):
+                    raise ValueError("OpenAI API key is not set in environment variables")
+                    
+                # Configure model based on agent type and role
+                temperature = 0.7 if agent_type in ['pm', 'ba', 'uxd'] else 0.2
+                
+                # Use enhanced configuration with proper error handling
+                self.llm = ChatOpenAI(
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=self.SUPPORTED_MODELS[model]['max_tokens'],
+                    request_timeout=90,
+                    max_retries=3,
+                    model_kwargs={
+                        'response_format': {"type": "text"}
+                    }
+                )
+            except ValueError as e:
+                raise ValueError(f"Configuration error: {str(e)}")
+            except Exception as e:
+                raise ValueError(f"Failed to initialize ChatGPT model: {str(e)}. Please check your API key and network connection.")
+
+            self.memory = ConversationBufferMemory(
+                return_messages=True,
+                memory_key="chat_history"
+            )
+            logger.info(f"Successfully initialized {agent_type} agent")
+            
+        except Exception as e:
+            error_msg = f"Failed to initialize {agent_type} agent: {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+    def process_input(self, user_input: str, context: dict = None) -> dict:
+        """
+        Process user input with enhanced context management and error handling.
+        
+        Args:
+            user_input: The user's message
+            context: Optional context dictionary
+            
+        Returns:
+            dict containing response and collaboration information
+        """
+        try:
+            if not user_input or not user_input.strip():
+                raise ValueError("User input cannot be empty")
+
+            logger.info(f"Processing input for {self.agent_type} agent")
+            
+            # Get complete chat history with enhanced logging
             history = self.memory.chat_memory.messages
+            logger.debug(f"Retrieved {len(history)} message(s) from memory")
             
             # Construct a detailed prompt with full context and history
             prompt = self._build_prompt(user_input, context, history)
+            logger.debug(f"Built prompt with context: {bool(context)}")
             
-            # Add the user input to memory
-            self.memory.chat_memory.add_user_message(user_input)
+            # Add the user input to memory with validation
+            if isinstance(user_input, str) and user_input.strip():
+                self.memory.chat_memory.add_user_message(user_input)
+                logger.debug("Added user message to memory")
             
-            # Generate response using the complete context
-            response = self.llm.invoke(prompt).content
+            try:
+                # Generate response with enhanced error handling and logging
+                logger.info("Generating response from ChatGPT")
+                response = self.llm.invoke(prompt).content
+                
+                # Enhanced response validation
+                if not response or not isinstance(response, str):
+                    raise ValueError("Invalid response format from ChatGPT")
+                
+                if len(response.strip()) < 10:
+                    raise ValueError("Response too short or empty")
+                
+                # Log successful response generation
+                logger.info("Successfully generated response")
+                logger.debug(f"Response length: {len(response)}")
+                    
+            except ValueError as e:
+                logger.error(f"Response validation error: {str(e)}")
+                raise
+                
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"Error generating response: {error_msg}")
+                
+                # Enhanced error classification
+                if any(err in error_msg.lower() for err in ["rate limit", "quota"]):
+                    raise ValueError("API rate limit exceeded. Please try again in a few moments.")
+                elif "invalid api key" in error_msg.lower():
+                    raise ValueError("Invalid API key. Please check your OpenAI API key configuration.")
+                elif any(err in error_msg.lower() for err in ["timeout", "timed out"]):
+                    raise ValueError("Request timed out. Please try again.")
+                else:
+                    raise ValueError(f"Failed to generate response: {error_msg}")
             
             # Add response to memory
             self.memory.chat_memory.add_ai_message(response)
             
-            # Parse response for collaboration needs and extract any specific requests
+            # Analyze collaboration needs
             needs_collaboration, collaboration_requests = self._analyze_collaboration_needs(response)
             
-            # Get complete context summary from memory
+            # Get context summary
             context_summary = self._get_context_summary()
             
             return {
@@ -95,42 +175,79 @@ class BaseAgent:
                 'agent_type': self.agent_type,
                 'context_summary': context_summary
             }
+            
         except Exception as e:
-            return {
-                'response': f"Error processing request: {str(e)}",
-                'needs_collaboration': [],
-                'collaboration_requests': {},
-                'agent_type': self.agent_type,
-                'context_summary': None
-            }
+            logger.error(f"Error processing input: {str(e)}")
+            raise
+
+    def _get_relevant_history(self, history: list, max_messages: int = 10) -> list:
+        """
+        Select relevant messages from conversation history.
+        
+        Args:
+            history: Complete conversation history
+            max_messages: Maximum number of messages to include
+            
+        Returns:
+            List of relevant messages for context
+        """
+        if not history:
+            return []
+            
+        # Start with the most recent messages
+        recent_history = history[-max_messages:]
+        
+        # Filter out system messages and empty content
+        filtered_history = [
+            msg for msg in recent_history
+            if (isinstance(msg, (HumanMessage, AIMessage)) and 
+                hasattr(msg, 'content') and 
+                msg.content.strip())
+        ]
+        
+        return filtered_history
     
     def _build_prompt(self, user_input: str, context: dict = None, history: list = None) -> str:
+        """Build a comprehensive prompt with enhanced context management."""
         prompt = f"{self.system_message.content}\n\n"
         
-        # Add complete conversation history without truncation
+        # Add curated conversation history with context preservation
         if history:
             prompt += "Previous conversation history:\n"
-            for msg in history:
+            # Filter and format relevant history
+            relevant_history = self._get_relevant_history(history)
+            for msg in relevant_history:
                 if isinstance(msg, HumanMessage):
                     prompt += f"User: {msg.content}\n"
                 elif isinstance(msg, AIMessage):
                     prompt += f"{self.agent_type.upper()}: {msg.content}\n"
             prompt += "\n"
         
-        # Add complete context if available
+        # Enhanced context integration
         if context:
+            # Project context with structured formatting
             if context.get('project'):
                 prompt += "Project Context:\n"
-                for key, value in context['project'].items():
-                    prompt += f"{key}: {value}\n"
+                project_data = context['project']
+                # Prioritize key project information
+                key_fields = ['name', 'description', 'status']
+                for field in key_fields:
+                    if field in project_data:
+                        prompt += f"{field.title()}: {project_data[field]}\n"
+                # Add any additional project context
+                for key, value in project_data.items():
+                    if key not in key_fields:
+                        prompt += f"{key}: {value}\n"
                 prompt += "\n"
             
+            # Previous agent responses with improved formatting
             if context.get('previous_responses'):
                 prompt += "Previous agent responses:\n"
                 for agent_type, response in context['previous_responses'].items():
                     prompt += f"{agent_type.upper()}: {response}\n"
                 prompt += "\n"
             
+            # Structured request handling
             if context.get('requests'):
                 prompt += "Specific requests:\n"
                 if isinstance(context['requests'], list):
@@ -201,7 +318,7 @@ class BaseAgent:
                     collaboration_requests[agent] = [req.strip() for req in matches]
         
         return needed_agents, collaboration_requests
-
+    
     def _get_context_summary(self) -> str:
         """Store conversation history for memory but don't display in UI"""
         try:
