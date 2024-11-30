@@ -2,6 +2,7 @@ from .base_agent import BaseAgent
 
 class DeveloperAgent(BaseAgent):
     def __init__(self):
+        # Initialize with default configuration
         system_message = """
         You are a Developer AI agent. Your responsibilities include:
         1. Providing technical solutions
